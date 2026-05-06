@@ -9,7 +9,7 @@ export interface CreateProjectPayload {
 }
 
 export const projectsApi = {
-  getAll: async (): Promise<Project[]> => {
+  getAll: async (): Promise<PaginatedResponse<Project>> => {
     const res = await api.get('/api/projects')
     return res.data
   },

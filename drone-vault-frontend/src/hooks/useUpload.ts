@@ -17,7 +17,8 @@ export function useUpload({ missionId, onComplete }: UploadOptions) {
     async (
       files: File[],
       endpoint: string,
-      step: UploadJob['step']
+      step: UploadJob['step'],
+      fieldName = 'files'
     ) => {
       const jobId = `${missionId}-${step}-${Date.now()}`
       const job: UploadJob = {
@@ -32,7 +33,7 @@ export function useUpload({ missionId, onComplete }: UploadOptions) {
 
       try {
         const formData = new FormData()
-        files.forEach((file) => formData.append('files', file))
+        files.forEach((file) => formData.append(fieldName, file))
 
         await axios.post(
           `${process.env.NEXT_PUBLIC_API_URL}${endpoint}`,
@@ -75,7 +76,7 @@ export function useUpload({ missionId, onComplete }: UploadOptions) {
 
   const uploadPlan = useCallback(
     (files: File[]) =>
-      uploadFiles(files, `/api/missions/${missionId}/upload/plan`, 'plan'),
+      uploadFiles(files, `/api/missions/${missionId}/upload/plan`, 'plan', 'plan'),
     [uploadFiles, missionId]
   )
 

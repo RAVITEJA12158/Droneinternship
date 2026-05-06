@@ -8,8 +8,16 @@ import { toAbsolutePath } from "../config/storage";
 
 export async function exportJson(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await exportService.exportJson(req.params.id, req.user!.id);
-    res.json(data);
+    const mission = await prisma.mission.findFirst({
+      where: { id: req.params.id, project: { userId: req.user!.id } },
+    });
+    if (!mission) { res.status(404).json({ message: "Mission not found" }); return; }
+    const job = await exportQueue.add("export", {
+      missionId: mission.id,
+      projectId: mission.projectId,
+      type: "json",
+    });
+    res.status(202).json({ jobId: job.id, status: "waiting" });
   } catch (err) { next(err); }
 }
 

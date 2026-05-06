@@ -1,7 +1,7 @@
 import prisma from "../prisma";
 
 export async function getDashboardStats(userId: string) {
-  const [totalProjects, totalMissions, fileAgg, recentMissions, recentUploads] =
+  const [totalProjects, totalMissions, fileAgg, recentMissions, recentProjects] =
     await Promise.all([
       prisma.project.count({ where: { userId } }),
       prisma.mission.count({ where: { project: { userId } } }),
@@ -16,14 +16,11 @@ export async function getDashboardStats(userId: string) {
         take: 5,
         include: { project: { select: { id: true, name: true } } },
       }),
-      prisma.file.findMany({
-        where: { mission: { project: { userId } } },
-        orderBy: { uploadedAt: "desc" },
-        take: 10,
-        select: {
-          id: true, originalName: true, fileType: true,
-          thumbnailPath: true, uploadedAt: true, missionId: true,
-        },
+      prisma.project.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: { _count: { select: { missions: true } } },
       }),
     ]);
 
@@ -31,8 +28,9 @@ export async function getDashboardStats(userId: string) {
     totalProjects,
     totalMissions,
     totalFiles: fileAgg._count,
-    storageUsed: fileAgg._sum.size ?? 0n,
+    // BigInt is not JSON-serializable — convert to Number (safe up to ~9 petabytes)
+    storageUsed: Number(fileAgg._sum.size ?? 0),
     recentMissions,
-    recentUploads,
+    recentProjects,
   };
 }

@@ -77,7 +77,7 @@ export interface DashboardStats {
 
 export interface ExportJob {
   jobId: string
-  status: 'QUEUED' | 'PROCESSING' | 'READY' | 'FAILED'
+  status: 'waiting' | 'active' | 'completed' | 'failed'
   downloadUrl?: string
 }
 

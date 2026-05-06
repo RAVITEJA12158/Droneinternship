@@ -6,8 +6,11 @@ import { toAbsolutePath } from "../config/storage";
 import { env } from "../config/env";
 
 export async function exportJson(missionId: string, userId: string) {
+  const where = userId
+    ? { id: missionId, project: { userId } }
+    : { id: missionId };
   const mission = await prisma.mission.findFirst({
-    where: { id: missionId, project: { userId } },
+    where,
     include: {
       project: true,
       captureSets: { include: { _count: { select: { files: true } } } },

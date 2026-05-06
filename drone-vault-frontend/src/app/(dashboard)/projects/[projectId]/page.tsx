@@ -19,7 +19,8 @@ import { formatDate } from '@/lib/utils/formatDate'
 export default function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const { data: project, isLoading, isError } = useProject(projectId)
-  const { data: missions } = useMissions(projectId)
+  const { data: missionsResponse } = useMissions(projectId)
+  const missions = missionsResponse?.data ?? []
   const { data: orthomosaics } = useOrthomosaics('') // loaded at mission level
 
   if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
@@ -46,7 +47,7 @@ export default function ProjectDetailPage() {
               </div>
             </div>
             {project.latitude != null && project.longitude != null && (
-              <ProjectMap latitude={project.latitude} longitude={project.longitude} missions={missions ?? []} />
+              <ProjectMap latitude={project.latitude} longitude={project.longitude} missions={missions} />
             )}
           </div>
         </div>
@@ -59,14 +60,14 @@ export default function ProjectDetailPage() {
           <div className="flex justify-end mb-4">
             <Link href={`/projects/${projectId}/missions/new`}><Button>+ New Mission</Button></Link>
           </div>
-          <MissionList missions={missions ?? []} projectId={projectId} />
+          <MissionList missions={missions} projectId={projectId} />
         </div>
       ),
     },
     {
       id: 'map', label: 'Map',
       content: project.latitude != null && project.longitude != null
-        ? <ProjectMap latitude={project.latitude} longitude={project.longitude} missions={missions ?? []} />
+        ? <ProjectMap latitude={project.latitude} longitude={project.longitude} missions={missions} />
         : <p className="text-slate-400 text-center py-12">No location set for this project.</p>,
     },
     {
@@ -76,7 +77,7 @@ export default function ProjectDetailPage() {
   ]
 
   return (
-    <PageShell title={project.name} subtitle={`${project.missionCount ?? missions?.length ?? 0} missions`}>
+    <PageShell title={project.name} subtitle={`${missionsResponse?.total ?? project.missionCount ?? 0} missions`}>
       <Tabs tabs={tabs} />
     </PageShell>
   )

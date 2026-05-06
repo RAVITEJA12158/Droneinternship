@@ -14,10 +14,10 @@ export function useExport(missionId: string) {
       try {
         const status = await exportsApi.getStatus(jobId)
         setJob(status)
-        if (status.status === 'READY' || status.status === 'FAILED') {
+        if (status.status === 'completed' || status.status === 'failed') {
           clearInterval(pollRef.current!)
           setIsExporting(false)
-          if (status.status === 'READY') {
+          if (status.status === 'completed') {
             toast.success('Export ready for download!')
           } else {
             toast.error('Export failed')
@@ -40,7 +40,7 @@ export function useExport(missionId: string) {
         else if (type === 'pdf') result = await exportsApi.exportPdf(missionId)
         else result = await exportsApi.exportJson(missionId)
 
-        setJob({ jobId: result.jobId, status: 'QUEUED' })
+        setJob({ jobId: result.jobId, status: 'waiting' })
         pollStatus(result.jobId)
       } catch {
         setIsExporting(false)

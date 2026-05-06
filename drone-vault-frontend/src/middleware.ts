@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export function middleware(request: NextRequest) {
-  const session = request.cookies.get('session')
+  const session = request.cookies.get('token')
   const { pathname } = request.nextUrl
 
   const publicPaths = ['/login', '/register']

@@ -1,5 +1,5 @@
 import api from './axios'
-import { Mission } from '@/types'
+import { Mission, PaginatedResponse } from '@/types'
 
 export interface CreateMissionPayload {
   name: string
@@ -8,7 +8,7 @@ export interface CreateMissionPayload {
 }
 
 export const missionsApi = {
-  getByProject: async (projectId: string): Promise<Mission[]> => {
+  getByProject: async (projectId: string): Promise<PaginatedResponse<Mission>> => {
     const res = await api.get(`/api/projects/${projectId}/missions`)
     return res.data
   },

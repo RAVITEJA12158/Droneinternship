@@ -53,6 +53,12 @@ export function errorMiddleware(
 
   // Generic errors
   if (err instanceof Error) {
+    // Services attach a statusCode for domain errors (404, 401, 409, etc.)
+    const statusCode = (err as Error & { statusCode?: number }).statusCode;
+    if (statusCode && statusCode >= 400 && statusCode < 500) {
+      res.status(statusCode).json({ code: "CLIENT_ERROR", message: err.message });
+      return;
+    }
     console.error("Unhandled error:", err);
     res.status(500).json({
       code: "INTERNAL_ERROR",

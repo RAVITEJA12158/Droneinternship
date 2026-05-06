@@ -11,15 +11,16 @@ import Link from 'next/link'
 import { Plus } from 'lucide-react'
 
 export default function ProjectsPage() {
-  const { data: projects, isLoading, isError } = useProjects()
+  const { data: response, isLoading, isError } = useProjects()
   const [search, setSearch] = useState('')
 
-  const filtered = projects?.filter(p => p.name.toLowerCase().includes(search.toLowerCase())) ?? []
+  const projects = response?.data ?? []
+  const filtered = projects.filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
 
   return (
     <PageShell
       title="Projects"
-      subtitle={`${projects?.length ?? 0} projects`}
+      subtitle={`${response?.total ?? 0} projects`}
       actions={
         <Link href="/projects/new">
           <Button><Plus size={16} />New Project</Button>
