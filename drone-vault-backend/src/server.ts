@@ -3,14 +3,13 @@ import { env } from "./config/env";
 import { ensureDir } from "./config/storage";
 import path from "path";
 
-// Ensure storage root exists
+// Ensure storage directories exist
 ensureDir(env.STORAGE_ROOT);
 ensureDir(path.join(env.STORAGE_ROOT, "projects"));
 ensureDir(path.join(env.STORAGE_ROOT, "temp"));
 
-// Start background workers (import to initialise)
-import("./jobs/workers/thumbnail.worker");
-import("./jobs/workers/export.worker");
+// Workers removed — thumbnails and exports now run inline
+// No Redis required
 
 app.listen(env.PORT, () => {
   console.log(`\n🚀 DroneVault API running on http://localhost:${env.PORT}`);

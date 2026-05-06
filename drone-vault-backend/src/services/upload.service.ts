@@ -4,14 +4,39 @@ import { computeMD5 } from "../lib/checksum";
 import { moveFile, fileSize } from "./storage.service";
 import { toRelativePath } from "../config/storage";
 import { groupIntoCaptureSets } from "./captureSet.service";
-import { thumbnailQueue } from "../jobs/queues";
+import { generateThumbnail, generateMSThumbnail, generateOrthomosaicPreview } from "../lib/sharp";
 import { env } from "../config/env";
 import { FileType, MapType } from "@prisma/client";
 
 interface UploadedFile {
   originalname: string;
-  path: string; // temp path
+  path: string;
   size: number;
+}
+
+async function generateThumbInline(fileId: string, relativePath: string, fileType: FileType) {
+  try {
+    const abs = toAbsPath(relativePath);
+    const thumbRelative = path.join(
+      path.dirname(relativePath).split("/").slice(0, 4).join("/"),
+      "thumbnails",
+      `${fileId}.jpg`
+    );
+    const thumbAbs = toAbsPath(thumbRelative);
+    if (fileType === FileType.MS_TIF) {
+      await generateMSThumbnail(abs, thumbAbs);
+    } else {
+      await generateThumbnail(abs, thumbAbs);
+    }
+    await prisma.file.update({ where: { id: fileId }, data: { thumbnailPath: thumbRelative } });
+  } catch (err) {
+    // Non-fatal — thumbnail failure should not break the upload response
+    console.warn(`Thumbnail generation failed for ${fileId}:`, (err as Error).message);
+  }
+}
+
+function toAbsPath(rel: string) {
+  return path.join(env.STORAGE_ROOT, rel);
 }
 
 export async function processRgbUpload(
@@ -30,21 +55,11 @@ export async function processRgbUpload(
     const relativePath = toRelativePath(destPath);
 
     const record = await prisma.file.create({
-      data: {
-        missionId,
-        fileType: FileType.RGB_JPG,
-        originalName: file.originalname,
-        relativePath,
-        size,
-        checksum,
-      },
+      data: { missionId, fileType: FileType.RGB_JPG, originalName: file.originalname, relativePath, size, checksum },
     });
     created.push(record);
-    await thumbnailQueue.add("thumbnail", {
-      fileId: record.id,
-      relativePath,
-      fileType: FileType.RGB_JPG,
-    });
+    // Generate thumbnail inline (non-blocking — fire and forget)
+    generateThumbInline(record.id, relativePath, FileType.RGB_JPG);
   }
 
   return { filesQueued: created.length };
@@ -66,21 +81,10 @@ export async function processMultispectralUpload(
     const relativePath = toRelativePath(destPath);
 
     const record = await prisma.file.create({
-      data: {
-        missionId,
-        fileType: FileType.MS_TIF,
-        originalName: file.originalname,
-        relativePath,
-        size,
-        checksum,
-      },
+      data: { missionId, fileType: FileType.MS_TIF, originalName: file.originalname, relativePath, size, checksum },
     });
     created.push(record);
-    await thumbnailQueue.add("thumbnail", {
-      fileId: record.id,
-      relativePath,
-      fileType: FileType.MS_TIF,
-    });
+    generateThumbInline(record.id, relativePath, FileType.MS_TIF);
   }
 
   const captureSetsParsed = await groupIntoCaptureSets(missionId, created);
@@ -100,14 +104,7 @@ export async function processPlanUpload(
   const relativePath = toRelativePath(destPath);
 
   const record = await prisma.file.create({
-    data: {
-      missionId,
-      fileType: FileType.MISSION_PLAN,
-      originalName: file.originalname,
-      relativePath,
-      size,
-      checksum,
-    },
+    data: { missionId, fileType: FileType.MISSION_PLAN, originalName: file.originalname, relativePath, size, checksum },
   });
   return { filesQueued: 1, fileId: record.id };
 }
@@ -127,26 +124,30 @@ export async function processOrthomosaicUpload(
   const created = [];
   for (const [key, file] of Object.entries(fileMap)) {
     if (!file) continue;
-    const destDir = path.join(
-      env.STORAGE_ROOT, "projects", projectId, missionId, "orthomosaic", key
-    );
+    const destDir = path.join(env.STORAGE_ROOT, "projects", projectId, missionId, "orthomosaic", key);
     const destPath = path.join(destDir, file.originalname);
     moveFile(file.path, destPath);
     const relativePath = toRelativePath(destPath);
 
     const ortho = await prisma.orthomosaic.create({
-      data: {
-        missionId,
-        type: typeToEnum[key],
-        relativePath,
-      },
+      data: { missionId, type: typeToEnum[key], relativePath },
     });
     created.push(ortho);
 
-    await thumbnailQueue.add("ortho-preview", {
-      orthoId: ortho.id,
-      relativePath,
-    });
+    // Generate ortho preview inline (non-blocking)
+    (async () => {
+      try {
+        const thumbRelative = path.join(
+          path.dirname(relativePath).split("/").slice(0, 4).join("/"),
+          "thumbnails",
+          `ortho_${ortho.id}.jpg`
+        );
+        await generateOrthomosaicPreview(toAbsPath(relativePath), toAbsPath(thumbRelative));
+        await prisma.orthomosaic.update({ where: { id: ortho.id }, data: { previewPath: thumbRelative } });
+      } catch (err) {
+        console.warn(`Ortho preview failed for ${ortho.id}:`, (err as Error).message);
+      }
+    })();
   }
 
   return { filesQueued: created.length };
