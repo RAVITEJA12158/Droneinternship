@@ -1,0 +1,133 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── Users ───────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(USER)
+  projects     Project[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+// ─── Projects ────────────────────────────────────────────────
+
+model Project {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  name        String
+  description String?
+  latitude    Float?
+  longitude   Float?
+  missions    Mission[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// ─── Missions ────────────────────────────────────────────────
+
+model Mission {
+  id           String        @id @default(cuid())
+  projectId    String
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  captureDate  DateTime
+  notes        String?
+  captureSets  CaptureSet[]
+  files        File[]
+  orthomosaics Orthomosaic[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([projectId])
+}
+
+// ─── Capture Sets ────────────────────────────────────────────
+
+model CaptureSet {
+  id         String        @id @default(cuid())
+  missionId  String
+  mission    Mission       @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  shotNumber Int
+  timestamp  DateTime?
+  lat        Float?
+  lng        Float?
+  status     CaptureStatus @default(RAW)
+  files      File[]
+
+  @@index([missionId])
+}
+
+enum CaptureStatus {
+  RAW
+  PROCESSED
+  FAILED
+}
+
+// ─── Files ───────────────────────────────────────────────────
+
+model File {
+  id            String      @id @default(cuid())
+  missionId     String
+  mission       Mission     @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  captureSetId  String?
+  captureSet    CaptureSet? @relation(fields: [captureSetId], references: [id], onDelete: SetNull)
+  fileType      FileType
+  originalName  String
+  relativePath  String
+  thumbnailPath String?
+  size          BigInt
+  checksum      String?
+  uploadedAt    DateTime    @default(now())
+
+  @@index([missionId])
+  @@index([captureSetId])
+}
+
+enum FileType {
+  RGB_JPG
+  MS_TIF
+  MISSION_PLAN
+  METADATA_JSON
+  OTHER
+}
+
+// ─── Orthomosaics ────────────────────────────────────────────
+
+model Orthomosaic {
+  id           String   @id @default(cuid())
+  missionId    String
+  mission      Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  type         MapType
+  relativePath String
+  previewPath  String?
+  version      Int      @default(1)
+  createdAt    DateTime @default(now())
+
+  @@index([missionId])
+}
+
+enum MapType {
+  RGB
+  MULTISPECTRAL
+  NDVI
+  DSM
+}
