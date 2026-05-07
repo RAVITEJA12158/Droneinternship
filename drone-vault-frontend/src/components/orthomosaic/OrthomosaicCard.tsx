@@ -7,11 +7,21 @@ import { formatDate } from '@/lib/utils/formatDate'
 const typeVariant: Record<string, 'green' | 'blue' | 'amber' | 'red'> = { RGB: 'green', MULTISPECTRAL: 'blue', NDVI: 'amber', DSM: 'red' }
 
 export function OrthomosaicCard({ ortho }: { ortho: Orthomosaic }) {
-  const previewUrl = ortho.previewPath ? `${process.env.NEXT_PUBLIC_API_URL}${ortho.previewPath}` : null
+  const previewUrl = ortho.previewPath ? orthomosaicsApi.getPreviewUrl(ortho.id) : null
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
       <div className="aspect-video bg-slate-100 flex items-center justify-center">
-        {previewUrl ? <img src={previewUrl} alt={ortho.type} className="w-full h-full object-cover" /> : <Image size={32} className="text-slate-600" />}
+        {previewUrl ? (
+          <img
+            src={previewUrl}
+            alt={ortho.type}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <Image size={32} className="text-slate-600" />
+        )}
       </div>
       <div className="p-4">
         <div className="flex items-center justify-between mb-2">

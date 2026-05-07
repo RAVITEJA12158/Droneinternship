@@ -26,6 +26,7 @@ export default function UploadPage() {
   const { projectId, missionId } = useParams<{ projectId: string; missionId: string }>()
   const [step, setStep] = useState(0)
   const [files, setFiles] = useState<File[]>([])
+  const [orthoType, setOrthoType] = useState<'rgb' | 'multispectral' | 'ndvi' | 'dsm'>('rgb')
   const [uploadStatus, setUploadStatus] = useState<Record<string, { status: string; progress: number }>>({})
   const { uploadRgb, uploadMultispectral, uploadPlan, uploadOrthomosaic, isUploading } = useUpload({ missionId })
 
@@ -39,7 +40,7 @@ export default function UploadPage() {
       if (stepId === 'rgb') await uploadRgb(files)
       else if (stepId === 'multispectral') await uploadMultispectral(files)
       else if (stepId === 'plan') await uploadPlan(files)
-      else await uploadOrthomosaic(files)
+      else await uploadOrthomosaic(files, orthoType)
       setUploadStatus(prev => ({ ...prev, [stepId]: { status: 'complete', progress: 100 } }))
       toast.success(`${currentStep.label} uploaded!`)
       setFiles([])
@@ -73,6 +74,23 @@ export default function UploadPage() {
             <h2 className="text-slate-950 font-semibold text-lg">{currentStep.label}</h2>
             <p className="text-slate-500 text-sm mt-1">{currentStep.description}</p>
           </div>
+          
+          {currentStep.id === 'orthomosaic' && (
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-700">Orthomosaic Type</label>
+              <select
+                value={orthoType}
+                onChange={(e) => setOrthoType(e.target.value as any)}
+                className="w-full h-10 px-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm bg-white"
+              >
+                <option value="rgb">RGB Orthomosaic</option>
+                <option value="multispectral">Multispectral Orthomosaic</option>
+                <option value="ndvi">NDVI</option>
+                <option value="dsm">DSM (Digital Surface Model)</option>
+              </select>
+            </div>
+          )}
+
           <FolderDropzone accept={ACCEPTS[currentStep.id]} label={currentStep.label} onFilesSelected={setFiles} />
           {uploadStatus[currentStep.id] && (
             <UploadProgressBar progress={uploadStatus[currentStep.id].progress} status={uploadStatus[currentStep.id].status} label={currentStep.label} />

@@ -1,6 +1,8 @@
 import api from './axios'
 import { Orthomosaic } from '@/types'
 
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
+
 export const orthomosaicsApi = {
   getByMission: async (missionId: string): Promise<Orthomosaic[]> => {
     const res = await api.get(`/api/missions/${missionId}/orthomosaics`)
@@ -13,6 +15,6 @@ export const orthomosaicsApi = {
   },
 
   getPreviewUrl: (id: string): string => {
-    return `${process.env.NEXT_PUBLIC_API_URL}/api/orthomosaics/${id}/preview`
+    return `${apiBaseUrl}/api/orthomosaics/${id}/preview`
   },
 }

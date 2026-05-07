@@ -1,6 +1,8 @@
 import api from './axios'
 import { DroneFile, PaginatedResponse } from '@/types'
 
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
+
 export const filesApi = {
   getByMission: async (
     missionId: string,
@@ -16,11 +18,11 @@ export const filesApi = {
   },
 
   getThumbnailUrl: (id: string): string => {
-    return `${process.env.NEXT_PUBLIC_API_URL}/api/files/${id}/thumbnail`
+    return `${apiBaseUrl}/api/files/${id}/thumbnail`
   },
 
   getDownloadUrl: (id: string): string => {
-    return `${process.env.NEXT_PUBLIC_API_URL}/api/files/${id}/download`
+    return `${apiBaseUrl}/api/files/${id}/download`
   },
 
   delete: async (id: string): Promise<void> => {

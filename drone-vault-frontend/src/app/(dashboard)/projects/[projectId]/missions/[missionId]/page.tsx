@@ -1,7 +1,7 @@
 'use client'
 import { useParams } from 'next/navigation'
 import { useMission } from '@/hooks/useMissions'
-import { useFiles, useCaptureSets, useOrthomosaics } from '@/hooks/useFiles'
+import { useCaptureSets, useOrthomosaics } from '@/hooks/useFiles'
 import { PageShell } from '@/components/layout/PageShell'
 import { Tabs } from '@/components/ui/Tabs'
 import { ImageGallery } from '@/components/gallery/ImageGallery'
@@ -17,13 +17,60 @@ import { formatBytes } from '@/lib/utils/formatBytes'
 import { Calendar, FileImage, HardDrive, Upload } from 'lucide-react'
 import Link from 'next/link'
 
+function CaptureSetsTab({ missionId }: { missionId: string }) {
+  const {
+    data,
+    isLoading,
+    isError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useCaptureSets(missionId)
+  const captureSets = data?.pages.flatMap(p => p.data) ?? []
+
+  if (isLoading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+  if (isError) return <ErrorState />
+
+  if (!captureSets.length) {
+    return <p className="text-slate-500 text-center py-12">No capture sets yet.</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      {captureSets.map(cs => <CaptureSetCard key={cs.id} captureSet={cs} />)}
+      {hasNextPage && (
+        <div className="flex justify-center pt-2">
+          <Button variant="secondary" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+            {isFetchingNextPage ? <Spinner size="sm" /> : 'Load more'}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OrthomosaicsTab({ missionId }: { missionId: string }) {
+  const { data, isLoading, isError } = useOrthomosaics(missionId)
+
+  if (isLoading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+  if (isError) return <ErrorState />
+
+  return <OrthomosaicViewer orthomosaics={data ?? []} />
+}
+
+function MissionMapTab({ missionId }: { missionId: string }) {
+  const { data, isLoading, isError } = useCaptureSets(missionId)
+  const captureSets = data?.pages.flatMap(p => p.data) ?? []
+
+  if (isLoading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+  if (isError) return <ErrorState />
+
+  return <MissionMapDynamic captureSets={captureSets} />
+}
+
 export default function MissionDetailPage() {
   const { projectId, missionId } = useParams<{ projectId: string; missionId: string }>()
   const { data: mission, isLoading, isError } = useMission(missionId)
-  const { data: captureSetsData } = useCaptureSets(missionId)
-  const { data: orthomosaics } = useOrthomosaics(missionId)
-
-  const captureSets = captureSetsData?.pages.flatMap(p => p.data) ?? []
 
   if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
   if (isError || !mission) return <ErrorState />
@@ -62,14 +109,9 @@ export default function MissionDetailPage() {
     },
     { id: 'rgb', label: 'RGB Images', content: <ImageGallery missionId={missionId} fileType="RGB_JPG" /> },
     { id: 'multispectral', label: 'Multispectral', content: <ImageGallery missionId={missionId} fileType="MS_TIF" /> },
-    {
-      id: 'capturesets', label: 'Capture Sets',
-      content: captureSets.length
-        ? <div className="space-y-3">{captureSets.map(cs => <CaptureSetCard key={cs.id} captureSet={cs} />)}</div>
-        : <p className="text-slate-500 text-center py-12">No capture sets yet.</p>,
-    },
-    { id: 'orthomosaics', label: 'Orthomosaics', content: <OrthomosaicViewer orthomosaics={orthomosaics ?? []} /> },
-    { id: 'map', label: 'Map', content: <MissionMapDynamic captureSets={captureSets} /> },
+    { id: 'capturesets', label: 'Capture Sets', content: <CaptureSetsTab missionId={missionId} /> },
+    { id: 'orthomosaics', label: 'Orthomosaics', content: <OrthomosaicsTab missionId={missionId} /> },
+    { id: 'map', label: 'Map', content: <MissionMapTab missionId={missionId} /> },
     { id: 'exports', label: 'Exports', content: <ExportPanel missionId={missionId} /> },
   ]
 

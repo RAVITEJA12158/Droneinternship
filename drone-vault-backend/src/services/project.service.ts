@@ -1,7 +1,7 @@
 import prisma from "../prisma";
 import { paginate, paginatedResponse } from "../lib/paginate";
 import { CreateProjectInput, UpdateProjectInput } from "../validations/project.schema";
-import { toAbsolutePath } from "../config/storage";
+import { toAbsolutePath, sanitizeName } from "../config/storage";
 import fs from "fs";
 import path from "path";
 import { env } from "../config/env";
@@ -50,9 +50,9 @@ export async function updateProject(id: string, userId: string, input: UpdatePro
 }
 
 export async function deleteProject(id: string, userId: string) {
-  await assertProjectOwner(id, userId);
-  // Delete disk storage
-  const projectDir = path.join(env.STORAGE_ROOT, "projects", id);
+  const project = await assertProjectOwner(id, userId);
+  // Delete disk storage based on name
+  const projectDir = path.join(env.STORAGE_ROOT, "projects", sanitizeName(project.name));
   if (fs.existsSync(projectDir)) {
     fs.rmSync(projectDir, { recursive: true, force: true });
   }

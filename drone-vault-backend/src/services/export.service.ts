@@ -2,7 +2,7 @@ import prisma from "../prisma";
 import path from "path";
 import fs from "fs";
 import archiver from "archiver";
-import { toAbsolutePath } from "../config/storage";
+import { toAbsolutePath, sanitizeName } from "../config/storage";
 import { env } from "../config/env";
 
 export async function exportJson(missionId: string, userId: string) {
@@ -46,7 +46,13 @@ export async function exportJson(missionId: string, userId: string) {
 }
 
 export async function createZipExport(missionId: string, projectId: string): Promise<string> {
-  const exportDir = path.join(env.STORAGE_ROOT, "projects", projectId, missionId, "exports");
+  const mission = await prisma.mission.findUnique({
+    where: { id: missionId },
+    include: { project: true }
+  });
+  if (!mission) throw new Error("Mission not found for export");
+
+  const exportDir = path.join(env.STORAGE_ROOT, "projects", sanitizeName(mission.project.name), sanitizeName(mission.name), "exports");
   fs.mkdirSync(exportDir, { recursive: true });
   const outPath = path.join(exportDir, `mission_${missionId}_${Date.now()}.zip`);
 

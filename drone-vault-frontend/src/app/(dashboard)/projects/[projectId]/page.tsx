@@ -13,18 +13,42 @@ import { Calendar, MapPin, Plus, Target } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils/formatDate'
 
+function MissionsTab({ projectId }: { projectId: string }) {
+  const { data, isLoading, isError } = useMissions(projectId)
+  const missions = data?.data ?? []
+
+  if (isLoading) return <div className="flex justify-center py-10"><Spinner size="md" /></div>
+  if (isError) return <ErrorState />
+
+  return <MissionList missions={missions} projectId={projectId} />
+}
+
+function ProjectMapTab({
+  latitude,
+  longitude,
+  projectId,
+}: {
+  latitude: number
+  longitude: number
+  projectId: string
+}) {
+  const { data, isLoading, isError } = useMissions(projectId)
+  const missions = data?.data ?? []
+
+  if (isLoading) return <div className="flex justify-center py-10"><Spinner size="md" /></div>
+  if (isError) return <ErrorState />
+
+  return <ProjectMapDynamic latitude={latitude} longitude={longitude} missions={missions} />
+}
+
 export default function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>()
-  const { data: project, isLoading: isProjectLoading, isError } = useProject(projectId)
-  const { data: missionsResponse, isLoading: isMissionsLoading } = useMissions(projectId)
-  const missions = missionsResponse?.data ?? []
-  // BUG-11 fix: removed dead useOrthomosaics('') call — it fired GET /api/missions//orthomosaics
-  // and orthomosaics is a per-mission concern, not shown on the project page.
+  const { data: project, isLoading, isError } = useProject(projectId)
 
-  if (isProjectLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
+  if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
   if (isError || !project) return <ErrorState />
 
-  const missionTotal = missionsResponse?.total ?? project.missionCount ?? 0
+  const missionTotal = project.missionCount ?? 0
   const hasLocation = project.latitude != null && project.longitude != null
   const projectCoords = hasLocation
     ? { latitude: project.latitude!, longitude: project.longitude! }
@@ -74,29 +98,13 @@ export default function ProjectDetailPage() {
         </div>
       ),
     },
-    {
-      id: 'missions', label: 'Missions',
-      content: (
-        <div>
-          {isMissionsLoading ? (
-            <div className="flex justify-center py-10"><Spinner size="md" /></div>
-          ) : (
-            <MissionList missions={missions} projectId={projectId} />
-          )}
-        </div>
-      ),
-    },
+    { id: 'missions', label: 'Missions', content: <MissionsTab projectId={projectId} /> },
     {
       id: 'map', label: 'Map',
-      // UI-06 fix: ProjectMap only rendered here, not duplicated in overview tab
       content: projectCoords
-        ? <ProjectMapDynamic latitude={projectCoords.latitude} longitude={projectCoords.longitude} missions={missions} />
+        ? <ProjectMapTab latitude={projectCoords.latitude} longitude={projectCoords.longitude} projectId={projectId} />
         : <p className="text-slate-500 text-center py-12">No location set for this project.</p>,
     },
-    // BUG-09 fix: removed Exports tab from project page entirely.
-    // Exports are per-mission — ExportPanel was incorrectly receiving projectId as missionId,
-    // causing POST /api/missions/{projectId}/export/zip which always returns 404.
-    // Exports are accessible from each individual mission page.
   ]
 
   return (

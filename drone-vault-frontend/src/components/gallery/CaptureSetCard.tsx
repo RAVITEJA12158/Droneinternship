@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { CaptureSet } from '@/types'
 import { Badge } from '@/components/ui/Badge'
+import { filesApi } from '@/lib/api/files'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { formatBytes } from '@/lib/utils/formatBytes'
 
@@ -25,7 +26,15 @@ export function CaptureSetCard({ captureSet }: { captureSet: CaptureSet }) {
           {captureSet.files.map(f => (
             <div key={f.id} className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-3">
-                {f.thumbnailPath && <img src={`${process.env.NEXT_PUBLIC_API_URL}${f.thumbnailPath}`} alt="" className="w-8 h-8 rounded object-cover" />}
+                {f.thumbnailPath && (
+                  <img
+                    src={filesApi.getThumbnailUrl(f.id)}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="w-8 h-8 rounded object-cover"
+                  />
+                )}
                 <span className="text-sm text-slate-700">{f.originalName}</span>
               </div>
               <span className="text-xs text-slate-500">{formatBytes(f.size)}</span>

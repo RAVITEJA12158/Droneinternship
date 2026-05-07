@@ -2,37 +2,16 @@ import path from "path";
 import prisma from "../prisma";
 import { computeMD5 } from "../lib/checksum";
 import { moveFile, fileSize } from "./storage.service";
-import { toRelativePath } from "../config/storage";
+import { toRelativePath, sanitizeName } from "../config/storage";
 import { groupIntoCaptureSets } from "./captureSet.service";
-import { generateThumbnail, generateMSThumbnail, generateOrthomosaicPreview } from "../lib/sharp";
 import { env } from "../config/env";
 import { FileType, MapType } from "@prisma/client";
+import { thumbnailQueue } from "../jobs/queues";
 
 interface UploadedFile {
   originalname: string;
   path: string;
   size: number;
-}
-
-async function generateThumbInline(fileId: string, relativePath: string, fileType: FileType) {
-  try {
-    const abs = toAbsPath(relativePath);
-    const thumbRelative = path.join(
-      path.dirname(relativePath).split("/").slice(0, 4).join("/"),
-      "thumbnails",
-      `${fileId}.jpg`
-    );
-    const thumbAbs = toAbsPath(thumbRelative);
-    if (fileType === FileType.MS_TIF) {
-      await generateMSThumbnail(abs, thumbAbs);
-    } else {
-      await generateThumbnail(abs, thumbAbs);
-    }
-    await prisma.file.update({ where: { id: fileId }, data: { thumbnailPath: thumbRelative } });
-  } catch (err) {
-    // Non-fatal — thumbnail failure should not break the upload response
-    console.warn(`Thumbnail generation failed for ${fileId}:`, (err as Error).message);
-  }
 }
 
 function toAbsPath(rel: string) {
@@ -44,7 +23,10 @@ export async function processRgbUpload(
   projectId: string,
   files: UploadedFile[]
 ) {
-  const destDir = path.join(env.STORAGE_ROOT, "projects", projectId, missionId, "raw", "rgb");
+  const mission = await prisma.mission.findUnique({ where: { id: missionId }, include: { project: true }});
+  if (!mission) throw new Error("Mission not found");
+  
+  const destDir = path.join(env.STORAGE_ROOT, "projects", sanitizeName(mission.project.name), sanitizeName(mission.name), "raw", "rgb");
   const created = [];
 
   for (const file of files) {
@@ -58,8 +40,9 @@ export async function processRgbUpload(
       data: { missionId, fileType: FileType.RGB_JPG, originalName: file.originalname, relativePath, size, checksum },
     });
     created.push(record);
-    // Generate thumbnail inline (non-blocking — fire and forget)
-    generateThumbInline(record.id, relativePath, FileType.RGB_JPG);
+    // Remove redundant inline generation
+    // Thumbnail generation is handled by thumbnail.worker.ts via queues.ts (or you can add to queue here if it wasn't) 
+    thumbnailQueue.add("rgbThumbnail", { fileId: record.id, relativePath, fileType: FileType.RGB_JPG });
   }
 
   return { filesQueued: created.length };
@@ -70,7 +53,10 @@ export async function processMultispectralUpload(
   projectId: string,
   files: UploadedFile[]
 ) {
-  const destDir = path.join(env.STORAGE_ROOT, "projects", projectId, missionId, "raw", "multispectral");
+  const mission = await prisma.mission.findUnique({ where: { id: missionId }, include: { project: true }});
+  if (!mission) throw new Error("Mission not found");
+  
+  const destDir = path.join(env.STORAGE_ROOT, "projects", sanitizeName(mission.project.name), sanitizeName(mission.name), "raw", "multispectral");
   const created = [];
 
   for (const file of files) {
@@ -84,7 +70,7 @@ export async function processMultispectralUpload(
       data: { missionId, fileType: FileType.MS_TIF, originalName: file.originalname, relativePath, size, checksum },
     });
     created.push(record);
-    generateThumbInline(record.id, relativePath, FileType.MS_TIF);
+    thumbnailQueue.add("msThumbnail", { fileId: record.id, relativePath, fileType: FileType.MS_TIF });
   }
 
   const captureSetsParsed = await groupIntoCaptureSets(missionId, created);
@@ -96,7 +82,10 @@ export async function processPlanUpload(
   projectId: string,
   file: UploadedFile
 ) {
-  const destDir = path.join(env.STORAGE_ROOT, "projects", projectId, missionId, "plan");
+  const mission = await prisma.mission.findUnique({ where: { id: missionId }, include: { project: true }});
+  if (!mission) throw new Error("Mission not found");
+
+  const destDir = path.join(env.STORAGE_ROOT, "projects", sanitizeName(mission.project.name), sanitizeName(mission.name), "plan");
   const destPath = path.join(destDir, file.originalname);
   await moveFile(file.path, destPath);
   const checksum = await computeMD5(destPath);
@@ -114,6 +103,9 @@ export async function processOrthomosaicUpload(
   projectId: string,
   fileMap: Partial<Record<"rgb" | "multispectral" | "ndvi" | "dsm", UploadedFile>>
 ) {
+  const mission = await prisma.mission.findUnique({ where: { id: missionId }, include: { project: true }});
+  if (!mission) throw new Error("Mission not found");
+
   const typeToEnum: Record<string, MapType> = {
     rgb: MapType.RGB,
     multispectral: MapType.MULTISPECTRAL,
@@ -124,7 +116,7 @@ export async function processOrthomosaicUpload(
   const created = [];
   for (const [key, file] of Object.entries(fileMap)) {
     if (!file) continue;
-    const destDir = path.join(env.STORAGE_ROOT, "projects", projectId, missionId, "orthomosaic", key);
+    const destDir = path.join(env.STORAGE_ROOT, "projects", sanitizeName(mission.project.name), sanitizeName(mission.name), "orthomosaic", key);
     const destPath = path.join(destDir, file.originalname);
     await moveFile(file.path, destPath);
     const relativePath = toRelativePath(destPath);
@@ -134,20 +126,8 @@ export async function processOrthomosaicUpload(
     });
     created.push(ortho);
 
-    // Generate ortho preview inline (non-blocking)
-    (async () => {
-      try {
-        const thumbRelative = path.join(
-          path.dirname(relativePath).split("/").slice(0, 4).join("/"),
-          "thumbnails",
-          `ortho_${ortho.id}.jpg`
-        );
-        await generateOrthomosaicPreview(toAbsPath(relativePath), toAbsPath(thumbRelative));
-        await prisma.orthomosaic.update({ where: { id: ortho.id }, data: { previewPath: thumbRelative } });
-      } catch (err) {
-        console.warn(`Ortho preview failed for ${ortho.id}:`, (err as Error).message);
-      }
-    })();
+    // Queue orthomosaic generation
+    thumbnailQueue.add("orthoThumbnail", { orthoId: ortho.id, relativePath, fileType: "ORTHO" });
   }
 
   return { filesQueued: created.length };

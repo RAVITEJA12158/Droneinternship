@@ -39,6 +39,22 @@ export async function download(req: Request, res: Response, next: NextFunction) 
     const file = await fileService.getFile(req.params.id, req.user!.id);
     const abs = toAbsolutePath(file.relativePath);
     if (!fs.existsSync(abs)) { res.status(404).json({ message: "File not found on disk" }); return; }
+    
+    // Check if inline viewing is requested
+    if (req.query.inline === "true") {
+      const ext = path.extname(abs).toLowerCase();
+      let mimeType = "application/octet-stream";
+      if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
+      if (ext === ".png") mimeType = "image/png";
+      if (ext === ".webp") mimeType = "image/webp";
+      if (ext === ".tif" || ext === ".tiff") mimeType = "image/tiff"; // Browsers may not render TIFF inline, but we'll try
+
+      res.setHeader("Content-Type", mimeType);
+      res.setHeader("Content-Disposition", `inline; filename="${file.originalName}"`);
+      fs.createReadStream(abs).pipe(res);
+      return;
+    }
+
     res.setHeader("Content-Disposition", `attachment; filename="${file.originalName}"`);
     res.setHeader("Content-Type", "application/octet-stream");
     fs.createReadStream(abs).pipe(res);

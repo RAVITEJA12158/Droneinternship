@@ -5,6 +5,7 @@ import { assertProjectOwner } from "./project.service";
 import path from "path";
 import fs from "fs";
 import { env } from "../config/env";
+import { sanitizeName } from "../config/storage";
 
 export async function listMissions(projectId: string, userId: string, page: number, limit: number) {
   await assertProjectOwner(projectId, userId);
@@ -27,7 +28,7 @@ export async function createMission(
   userId: string,
   input: CreateMissionInput
 ) {
-  await assertProjectOwner(projectId, userId);
+  const project = await assertProjectOwner(projectId, userId);
   const mission = await prisma.mission.create({
     data: {
       projectId,
@@ -36,7 +37,7 @@ export async function createMission(
       notes: input.notes,
     },
   });
-  // Create storage dirs
+  // Create storage dirs using sanitized names
   const dirs = [
     "plan", "raw/rgb", "raw/multispectral",
     "orthomosaic/rgb", "orthomosaic/multispectral", "orthomosaic/ndvi", "orthomosaic/dsm",
@@ -44,7 +45,7 @@ export async function createMission(
   ];
   for (const d of dirs) {
     fs.mkdirSync(
-      path.join(env.STORAGE_ROOT, "projects", projectId, mission.id, d),
+      path.join(env.STORAGE_ROOT, "projects", sanitizeName(project.name), sanitizeName(mission.name), d),
       { recursive: true }
     );
   }
@@ -80,9 +81,12 @@ export async function updateMission(id: string, userId: string, input: UpdateMis
 
 export async function deleteMission(id: string, userId: string) {
   const mission = await assertMissionOwner(id, userId);
-  const missionDir = path.join(env.STORAGE_ROOT, "projects", mission.projectId, id);
-  if (fs.existsSync(missionDir)) {
-    fs.rmSync(missionDir, { recursive: true, force: true });
+  const project = await prisma.project.findUnique({ where: { id: mission.projectId } });
+  if (project) {
+    const missionDir = path.join(env.STORAGE_ROOT, "projects", sanitizeName(project.name), sanitizeName(mission.name));
+    if (fs.existsSync(missionDir)) {
+      fs.rmSync(missionDir, { recursive: true, force: true });
+    }
   }
   await prisma.mission.delete({ where: { id } });
 }

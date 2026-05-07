@@ -21,13 +21,33 @@ function normalizeProject(project: ProjectResponse): Project {
   }
 }
 
+function normalizeProjectResponse(payload: unknown): PaginatedResponse<Project> {
+  if (Array.isArray(payload)) {
+    return {
+      data: payload.map((project) => normalizeProject(project as ProjectResponse)),
+      total: payload.length,
+      page: 1,
+      limit: payload.length,
+      hasMore: false,
+    }
+  }
+
+  const response = payload as Partial<PaginatedResponse<ProjectResponse>> | null
+  const data = Array.isArray(response?.data) ? response.data : []
+
+  return {
+    data: data.map(normalizeProject),
+    total: typeof response?.total === 'number' ? response.total : data.length,
+    page: typeof response?.page === 'number' ? response.page : 1,
+    limit: typeof response?.limit === 'number' ? response.limit : data.length,
+    hasMore: Boolean(response?.hasMore),
+  }
+}
+
 export const projectsApi = {
   getAll: async (): Promise<PaginatedResponse<Project>> => {
     const res = await api.get('/api/projects')
-    return {
-      ...res.data,
-      data: res.data.data.map(normalizeProject),
-    }
+    return normalizeProjectResponse(res.data)
   },
 
   getById: async (id: string): Promise<Project> => {

@@ -80,7 +80,7 @@ export function useUpload({ missionId, onComplete }: UploadOptions) {
   )
 
   const uploadOrthomosaic = useCallback(
-    (files: File[]) => {
+    (files: File[], orthoType?: 'rgb' | 'multispectral' | 'ndvi' | 'dsm') => {
       const jobId = `${missionId}-orthomosaic-${Date.now()}`
       const job: UploadJob = {
         id: jobId,
@@ -105,7 +105,7 @@ export function useUpload({ missionId, onComplete }: UploadOptions) {
           }
 
           files.forEach((file) => {
-            const field = inferField(file)
+            const field = orthoType || inferField(file)
             formData.append(field, file)
           })
 

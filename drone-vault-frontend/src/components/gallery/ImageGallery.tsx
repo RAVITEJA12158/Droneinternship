@@ -8,19 +8,25 @@ import { DroneFile } from '@/types'
 
 interface Props { missionId: string; fileType: 'RGB_JPG' | 'MS_TIF' }
 export function ImageGallery({ missionId, fileType }: Props) {
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useFiles(missionId, fileType)
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError } = useFiles(missionId, fileType)
   const [lightbox, setLightbox] = useState<{ file: DroneFile; allFiles: DroneFile[]; idx: number } | null>(null)
   const loadMoreRef = useRef<HTMLDivElement>(null)
 
   const allFiles = data?.pages.flatMap(p => p.data) ?? []
 
   useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting && hasNextPage) fetchNextPage() })
+    const obs = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage()
+      },
+      { rootMargin: '320px' }
+    )
     if (loadMoreRef.current) obs.observe(loadMoreRef.current)
     return () => obs.disconnect()
-  }, [fetchNextPage, hasNextPage])
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage])
 
   if (isLoading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+  if (isError) return <p className="text-red-600 text-center py-12">Could not load files. Please try again.</p>
   if (!allFiles.length) return <p className="text-slate-400 text-center py-12">No {fileType} files uploaded yet.</p>
 
   return (
