@@ -3,53 +3,71 @@ import * as exportService from "../services/export.service";
 import prisma from "../prisma";
 import fs from "fs";
 import path from "path";
-import { toAbsolutePath } from "../config/storage";
-import { env } from "../config/env";
 
-// In-memory job store — good enough for dev/internship scale
 interface Job {
   id: string;
+  type: "zip" | "json";
   status: "waiting" | "active" | "completed" | "failed";
   outPath?: string;
   error?: string;
 }
+
 const jobs = new Map<string, Job>();
 
-function createJob(): Job {
+function createJob(type: "zip" | "json"): Job {
   const id = `job_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const job: Job = { id, status: "waiting" };
+  const job: Job = { id, type, status: "waiting" };
   jobs.set(id, job);
   return job;
 }
 
-export async function exportJson(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = await exportService.exportJson(req.params.id, req.user!.id);
-    res.json(data);
-  } catch (err) { next(err); }
+async function assertMissionAccess(missionId: string, userId: string) {
+  const mission = await prisma.mission.findFirst({
+    where: { id: missionId, project: { userId } },
+  });
+  if (!mission) {
+    const err = new Error("Mission not found") as Error & { statusCode: number };
+    err.statusCode = 404;
+    throw err;
+  }
+  return mission;
 }
 
 export async function exportZip(req: Request, res: Response, next: NextFunction) {
   try {
-    const mission = await prisma.mission.findFirst({
-      where: { id: req.params.id, project: { userId: req.user!.id } },
-    });
-    if (!mission) { res.status(404).json({ message: "Mission not found" }); return; }
-
-    const job = createJob();
+    const mission = await assertMissionAccess(req.params.id, req.user!.id);
+    const job = createJob("zip");
     res.status(202).json({ jobId: job.id, status: "waiting" });
 
-    // Run async — response already sent
     (async () => {
       job.status = "active";
       try {
-        const outPath = await exportService.createZipExport(mission.id, mission.projectId);
+        job.outPath = await exportService.createZipExport(mission.id);
         job.status = "completed";
-        job.outPath = outPath;
       } catch (err) {
         job.status = "failed";
         job.error = (err as Error).message;
         console.error("ZIP export failed:", err);
+      }
+    })();
+  } catch (err) { next(err); }
+}
+
+export async function exportJson(req: Request, res: Response, next: NextFunction) {
+  try {
+    const mission = await assertMissionAccess(req.params.id, req.user!.id);
+    const job = createJob("json");
+    res.status(202).json({ jobId: job.id, status: "waiting" });
+
+    (async () => {
+      job.status = "active";
+      try {
+        job.outPath = await exportService.createJsonExport(mission.id, req.user!.id);
+        job.status = "completed";
+      } catch (err) {
+        job.status = "failed";
+        job.error = (err as Error).message;
+        console.error("JSON export failed:", err);
       }
     })();
   } catch (err) { next(err); }
@@ -80,7 +98,8 @@ export async function downloadExport(req: Request, res: Response) {
   if (!fs.existsSync(job.outPath)) {
     res.status(404).json({ message: "Export file not found" }); return;
   }
+
   res.setHeader("Content-Disposition", `attachment; filename="${path.basename(job.outPath)}"`);
-  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Type", job.type === "json" ? "application/json" : "application/zip");
   fs.createReadStream(job.outPath).pipe(res);
 }
