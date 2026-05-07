@@ -80,8 +80,52 @@ export function useUpload({ missionId, onComplete }: UploadOptions) {
   )
 
   const uploadOrthomosaic = useCallback(
-    (files: File[]) =>
-      uploadFiles(files, `/api/missions/${missionId}/upload/orthomosaic`, 'orthomosaic'),
+    (files: File[]) => {
+      const jobId = `${missionId}-orthomosaic-${Date.now()}`
+      const job: UploadJob = {
+        id: jobId,
+        missionId,
+        step: 'orthomosaic',
+        status: 'uploading',
+        progress: 0,
+      }
+      addUploadJob(job)
+      const post = async () => {
+        try {
+          const formData = new FormData()
+
+          const inferField = (f: File) => {
+            const name = f.name.toLowerCase()
+            if (name.includes('ndvi')) return 'ndvi'
+            if (name.includes('dsm')) return 'dsm'
+            if (name.includes('rgb')) return 'rgb'
+            if (name.includes('multi') || name.includes('multispect') || name.endsWith('.tif') || name.endsWith('.tiff')) return 'multispectral'
+            if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'rgb'
+            return 'rgb'
+          }
+
+          files.forEach((file) => {
+            const field = inferField(file)
+            formData.append(field, file)
+          })
+
+          await api.post(`/api/missions/${missionId}/upload/orthomosaic`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            onUploadProgress: (evt) => {
+              const progress = evt.total ? Math.round((evt.loaded * 100) / evt.total) : 0
+              updateUploadJob(jobId, { progress })
+            },
+          })
+
+          updateUploadJob(jobId, { status: 'complete', progress: 100 })
+        } catch (err) {
+          updateUploadJob(jobId, { status: 'failed' })
+          throw err
+        }
+      }
+
+      post()
+    },
     [uploadFiles, missionId]
   )
 
