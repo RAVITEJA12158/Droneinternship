@@ -11,14 +11,14 @@ import toast from 'react-hot-toast'
 const STEPS = [
   { id: 'rgb', label: 'RGB Images', description: 'Upload .jpg/.jpeg files from RGB camera' },
   { id: 'multispectral', label: 'Multispectral', description: 'Upload .tif/.tiff files from multispectral camera' },
-  { id: 'plan', label: 'Mission Plan', description: 'Upload .plan, .json, or .waypoints file' },
+  { id: 'plan', label: 'Mission Plan', description: 'Upload .plan, .json, .waypoints, .kml, or .kmz file' },
   { id: 'orthomosaic', label: 'Orthomosaics', description: 'Upload processed orthomosaic files (optional)' },
 ]
 
 const ACCEPTS: Record<string, string[]> = {
   rgb: ['.jpg', '.jpeg'],
   multispectral: ['.tif', '.tiff'],
-  plan: ['.plan', '.json', '.waypoints'],
+  plan: ['.plan', '.json', '.waypoints', '.kml', '.kmz'],
   orthomosaic: ['.tif', '.tiff', '.jpg'],
 }
 

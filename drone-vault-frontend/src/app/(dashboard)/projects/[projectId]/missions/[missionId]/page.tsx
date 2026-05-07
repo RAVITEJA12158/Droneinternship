@@ -1,7 +1,7 @@
 'use client'
 import { useParams } from 'next/navigation'
 import { useMission } from '@/hooks/useMissions'
-import { useCaptureSets, useOrthomosaics } from '@/hooks/useFiles'
+import { useCaptureSets, useFiles, useOrthomosaics } from '@/hooks/useFiles'
 import { PageShell } from '@/components/layout/PageShell'
 import { Tabs } from '@/components/ui/Tabs'
 import { ImageGallery } from '@/components/gallery/ImageGallery'
@@ -59,13 +59,15 @@ function OrthomosaicsTab({ missionId }: { missionId: string }) {
 }
 
 function MissionMapTab({ missionId }: { missionId: string }) {
-  const { data, isLoading, isError } = useCaptureSets(missionId)
-  const captureSets = data?.pages.flatMap(p => p.data) ?? []
+  const { data: captureSetsData, isLoading: isCaptureSetsLoading, isError: isCaptureSetsError } = useCaptureSets(missionId)
+  const { data: plansData, isLoading: isPlansLoading, isError: isPlansError } = useFiles(missionId, 'MISSION_PLAN')
+  const captureSets = captureSetsData?.pages.flatMap(p => p.data) ?? []
+  const missionPlans = plansData?.pages.flatMap(p => p.data) ?? []
 
-  if (isLoading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
-  if (isError) return <ErrorState />
+  if (isCaptureSetsLoading || isPlansLoading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+  if (isCaptureSetsError || isPlansError) return <ErrorState />
 
-  return <MissionMapDynamic captureSets={captureSets} />
+  return <MissionMapDynamic captureSets={captureSets} missionPlans={missionPlans} />
 }
 
 export default function MissionDetailPage() {
