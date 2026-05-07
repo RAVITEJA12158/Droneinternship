@@ -9,8 +9,8 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants = {
-  primary: 'bg-cyan-700 hover:bg-cyan-600 text-white shadow-sm shadow-cyan-900/10',
-  secondary: 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 shadow-sm',
+  primary: 'bg-cyan-700 hover:bg-cyan-600 text-white shadow-sm shadow-cyan-900/20',
+  secondary: 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 shadow-sm shadow-slate-950/5',
   danger: 'bg-red-600 hover:bg-red-500 text-white shadow-sm',
   ghost: 'bg-transparent hover:bg-cyan-50 text-slate-600 hover:text-cyan-800',
 }
@@ -18,7 +18,7 @@ const sizes = { sm: 'px-3 py-2 text-sm h-9', md: 'px-4 py-2.5 text-sm h-10', lg:
 
 export function Button({ variant = 'primary', size = 'md', loading, disabled, children, className = '', ...props }: Props) {
   return (
-    <button {...props} disabled={disabled || loading} className={`inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}>
+    <button {...props} disabled={disabled || loading} className={`inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}>
       {loading && <Spinner size="sm" />}
       {children}
     </button>

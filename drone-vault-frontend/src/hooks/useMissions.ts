@@ -37,6 +37,23 @@ export function useCreateMission(projectId: string) {
   })
 }
 
+export function useUpdateMission(projectId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<CreateMissionPayload> }) =>
+      missionsApi.update(id, data),
+    onSuccess: (mission) => {
+      queryClient.invalidateQueries({ queryKey: ['missions', mission.id] })
+      queryClient.invalidateQueries({ queryKey: ['missions', 'project', projectId] })
+      toast.success('Mission updated')
+    },
+    onError: () => {
+      toast.error('Failed to update mission')
+    },
+  })
+}
+
 export function useDeleteMission(projectId: string) {
   const queryClient = useQueryClient()
   const router = useRouter()

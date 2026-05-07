@@ -16,6 +16,8 @@ export function useSearch() {
     try {
       const data = await searchApi.search(q)
       setResults(data)
+    } catch {
+      setResults({ projects: [], missions: [], files: [] })
     } finally {
       setIsSearching(false)
     }

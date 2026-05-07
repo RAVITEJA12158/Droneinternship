@@ -1,6 +1,7 @@
 'use client'
+import { useState } from 'react'
 import { useParams } from 'next/navigation'
-import { useMission } from '@/hooks/useMissions'
+import { useMission, useUpdateMission } from '@/hooks/useMissions'
 import { useCaptureSets, useFiles, useOrthomosaics } from '@/hooks/useFiles'
 import { PageShell } from '@/components/layout/PageShell'
 import { Tabs } from '@/components/ui/Tabs'
@@ -14,7 +15,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { formatDate } from '@/lib/utils/formatDate'
 import { formatBytes } from '@/lib/utils/formatBytes'
-import { Calendar, FileImage, HardDrive, Layers, ScanLine, Upload } from 'lucide-react'
+import { Calendar, Edit3, FileImage, HardDrive, Layers, Save, ScanLine, Upload, X } from 'lucide-react'
 import Link from 'next/link'
 
 function CaptureSetsTab({ missionId }: { missionId: string }) {
@@ -73,6 +74,9 @@ function MissionMapTab({ missionId }: { missionId: string }) {
 export default function MissionDetailPage() {
   const { projectId, missionId } = useParams<{ projectId: string; missionId: string }>()
   const { data: mission, isLoading, isError } = useMission(missionId)
+  const updateMission = useUpdateMission(projectId)
+  const [isEditingNotes, setIsEditingNotes] = useState(false)
+  const [notes, setNotes] = useState('')
 
   if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
   if (isError || !mission) return <ErrorState />
@@ -112,12 +116,61 @@ export default function MissionDetailPage() {
               </div>
             )}
           </div>
-          {mission.notes && (
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-              <p className="text-slate-500 text-sm font-medium mb-2">Notes</p>
-              <p className="text-slate-700">{mission.notes}</p>
+          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-slate-500 text-sm font-medium">Notes</p>
+              {!isEditingNotes && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setNotes(mission.notes ?? '')
+                    setIsEditingNotes(true)
+                  }}
+                >
+                  <Edit3 size={14} />Edit
+                </Button>
+              )}
             </div>
-          )}
+            {isEditingNotes ? (
+              <div className="mt-3 space-y-3">
+                <textarea
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  rows={5}
+                  maxLength={2000}
+                  className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-950 shadow-sm outline-none placeholder:text-slate-400 focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600"
+                  placeholder="Add mission notes..."
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-slate-500">{notes.length}/2000</span>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setIsEditingNotes(false)}>
+                      <X size={14} />Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      loading={updateMission.isPending}
+                      onClick={() => {
+                        updateMission.mutate(
+                          { id: missionId, data: { notes: notes.trim() } },
+                          { onSuccess: () => setIsEditingNotes(false) }
+                        )
+                      }}
+                    >
+                      <Save size={14} />Save
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-slate-700 text-sm mt-2 leading-6">
+                {mission.notes || 'No notes have been added for this mission yet.'}
+              </p>
+            )}
+          </div>
         </div>
       ),
     },

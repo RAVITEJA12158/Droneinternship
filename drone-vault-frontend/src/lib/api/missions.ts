@@ -65,7 +65,7 @@ export const missionsApi = {
 
   update: async (id: string, data: Partial<CreateMissionPayload>): Promise<Mission> => {
     const res = await api.patch(`/api/missions/${id}`, data)
-    return res.data
+    return normalizeMission(res.data)
   },
 
   delete: async (id: string): Promise<void> => {

@@ -5,7 +5,7 @@ import { formatDate } from '@/lib/utils/formatDate'
 
 export function ProjectCard({ project }: { project: Project }) {
   return (
-    <Link href={`/projects/${project.id}`} className="block bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:border-cyan-300 hover:shadow-md transition-all">
+    <Link href={`/projects/${project.id}`} className="block bg-white border border-slate-200 rounded-2xl p-5 shadow-sm shadow-slate-950/5 hover:border-cyan-300 hover:shadow-md hover:shadow-slate-950/10 transition-all">
       <div className="flex items-start justify-between mb-3">
         <h3 className="text-slate-950 font-semibold text-lg leading-tight">{project.name}</h3>
         {project.missionCount !== undefined && (

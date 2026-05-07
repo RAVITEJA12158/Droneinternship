@@ -1,6 +1,13 @@
 import prisma from "../prisma";
 import { paginate } from "../lib/paginate";
 
+function serializeFile<T extends { size: bigint }>(file: T): Omit<T, "size"> & { size: number } {
+  return {
+    ...file,
+    size: Number(file.size),
+  };
+}
+
 export async function search(
   userId: string,
   q: string,
@@ -43,15 +50,19 @@ export async function search(
   }
 
   if (!type || type === "file") {
-    results.files = await prisma.file.findMany({
+    const files = await prisma.file.findMany({
       where: {
         mission: { project: { userId } },
         originalName: { contains: q, mode: "insensitive" },
         ...(fromDate && { uploadedAt: { gte: fromDate } }),
         ...(toDate && { uploadedAt: { lte: toDate } }),
       },
+      include: {
+        mission: { select: { id: true, name: true, projectId: true } },
+      },
       ...paginate(page, limit),
     });
+    results.files = files.map(serializeFile);
   }
 
   return results;

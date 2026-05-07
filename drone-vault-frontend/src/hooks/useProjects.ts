@@ -36,6 +36,23 @@ export function useCreateProject() {
   })
 }
 
+export function useUpdateProject() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<CreateProjectPayload> }) =>
+      projectsApi.update(id, data),
+    onSuccess: (project) => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['projects', project.id] })
+      toast.success('Project updated')
+    },
+    onError: () => {
+      toast.error('Failed to update project')
+    },
+  })
+}
+
 export function useDeleteProject() {
   const queryClient = useQueryClient()
   const router = useRouter()
