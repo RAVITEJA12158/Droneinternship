@@ -7,6 +7,7 @@ import { groupIntoCaptureSets } from "./captureSet.service";
 import { env } from "../config/env";
 import { FileType, MapType } from "@prisma/client";
 import { thumbnailQueue } from "../jobs/queues";
+import { generateOrthomosaicPreview } from "../lib/sharp";
 
 interface UploadedFile {
   originalname: string;
@@ -126,8 +127,15 @@ export async function processOrthomosaicUpload(
     });
     created.push(ortho);
 
-    // Queue orthomosaic generation
-    thumbnailQueue.add("orthoThumbnail", { orthoId: ortho.id, relativePath, fileType: "ORTHO" });
+    const previewPath = path.join(
+      "projects",
+      sanitizeName(mission.project.name),
+      sanitizeName(mission.name),
+      "thumbnails",
+      `ortho_${ortho.id}.jpg`
+    );
+    await generateOrthomosaicPreview(destPath, toAbsPath(previewPath));
+    await prisma.orthomosaic.update({ where: { id: ortho.id }, data: { previewPath } });
   }
 
   return { filesQueued: created.length };

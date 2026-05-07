@@ -17,4 +17,8 @@ export const orthomosaicsApi = {
   getPreviewUrl: (id: string): string => {
     return `${apiBaseUrl}/api/orthomosaics/${id}/preview`
   },
+
+  getDownloadUrl: (id: string): string => {
+    return `${apiBaseUrl}/api/orthomosaics/${id}/download`
+  },
 }
