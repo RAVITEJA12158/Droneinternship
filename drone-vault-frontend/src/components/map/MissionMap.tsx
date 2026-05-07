@@ -130,6 +130,14 @@ function parseMissionPlan(fileName: string, text: string): ParsedMissionPlan {
   return { fileName, points: [], error: 'Unsupported mission plan format.' }
 }
 
+function formatCoordinate(value: number) {
+  return value.toFixed(6)
+}
+
+function formatAltitude(value?: number) {
+  return value == null ? 'Not set' : `${value.toFixed(value % 1 === 0 ? 0 : 1)} m`
+}
+
 export function MissionMap({ captureSets, missionPlans = [] }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -244,7 +252,8 @@ export function MissionMap({ captureSets, missionPlans = [] }: Props) {
     }
   }, [capturePoints, parsedPlan])
 
-  const planPointCount = parsedPlan?.points.length ?? 0
+  const planPoints = parsedPlan?.points ?? []
+  const planPointCount = planPoints.length
 
   if (!capturePoints.length && !planPointCount) return (
     <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 shadow-sm">
@@ -288,6 +297,42 @@ export function MissionMap({ captureSets, missionPlans = [] }: Props) {
       <div className="p-3">
         <div ref={ref} className="w-full h-[30rem] min-h-96 z-0 rounded-xl overflow-hidden border border-slate-200" />
       </div>
+      {planPoints.length > 0 && (
+        <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-4">
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-950">Mission Plan Waypoints</h3>
+              <p className="text-xs text-slate-500">{parsedPlan?.fileName}</p>
+            </div>
+            <span className="text-xs font-medium text-slate-500">{planPoints.length} total</span>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="max-h-80 overflow-auto">
+              <table className="w-full table-fixed text-left text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-100 text-xs font-semibold uppercase text-slate-500">
+                  <tr>
+                    <th className="w-16 px-3 py-2">#</th>
+                    <th className="px-3 py-2">Latitude</th>
+                    <th className="px-3 py-2">Longitude</th>
+                    <th className="px-3 py-2">Altitude</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {planPoints.map((point, index) => (
+                    <tr key={`${point.latitude}-${point.longitude}-${index}`} className="hover:bg-violet-50/50">
+                      <td className="px-3 py-2 font-medium text-slate-700">WP {index + 1}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-slate-700">{formatCoordinate(point.latitude)}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-slate-700">{formatCoordinate(point.longitude)}</td>
+                      <td className="px-3 py-2 text-slate-600">{formatAltitude(point.altitude)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
