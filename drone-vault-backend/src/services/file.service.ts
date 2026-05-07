@@ -1,8 +1,14 @@
 import prisma from "../prisma";
 import { paginate, paginatedResponse } from "../lib/paginate";
 import { deleteFile } from "./storage.service";
-import { toAbsolutePath } from "../config/storage";
 import { FileType } from "@prisma/client";
+
+function serializeFile<T extends { size: bigint }>(file: T): Omit<T, "size"> & { size: number } {
+  return {
+    ...file,
+    size: Number(file.size),
+  };
+}
 
 export async function listFiles(
   missionId: string,
@@ -24,7 +30,7 @@ export async function listFiles(
     prisma.file.findMany({ where, orderBy: { uploadedAt: "desc" }, ...paginate(page, limit) }),
     prisma.file.count({ where }),
   ]);
-  return paginatedResponse(data, total, page, limit);
+  return paginatedResponse(data.map(serializeFile), total, page, limit);
 }
 
 export async function getFile(id: string, userId: string) {
@@ -36,7 +42,7 @@ export async function getFile(id: string, userId: string) {
     err.statusCode = 404;
     throw err;
   }
-  return file;
+  return serializeFile(file);
 }
 
 export async function deleteFileById(id: string, userId: string) {

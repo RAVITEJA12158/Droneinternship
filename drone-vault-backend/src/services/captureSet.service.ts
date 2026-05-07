@@ -66,7 +66,7 @@ export async function listCaptureSets(missionId: string, userId: string, page: n
       include: {
         _count: { select: { files: true } },
         files: {
-          select: { id: true, fileType: true, originalName: true, thumbnailPath: true },
+          select: { id: true, fileType: true, originalName: true, thumbnailPath: true, size: true },
           take: 5,
         },
       },
@@ -76,7 +76,15 @@ export async function listCaptureSets(missionId: string, userId: string, page: n
     prisma.captureSet.count({ where: { missionId } }),
   ]);
 
-  return paginatedResponse(data, total, page, limit);
+  return paginatedResponse(
+    data.map((captureSet) => ({
+      ...captureSet,
+      files: captureSet.files.map((file) => ({ ...file, size: Number(file.size) })),
+    })),
+    total,
+    page,
+    limit
+  );
 }
 
 export async function getCaptureSet(id: string, userId: string) {
@@ -92,5 +100,8 @@ export async function getCaptureSet(id: string, userId: string) {
     err.statusCode = 404;
     throw err;
   }
-  return cs;
+  return {
+    ...cs,
+    files: cs.files.map((file) => ({ ...file, size: Number(file.size) })),
+  };
 }
