@@ -12,10 +12,10 @@ export function Modal({ open, onClose, title, children }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+      <div className="relative bg-white border border-slate-200 rounded-xl p-6 w-full max-w-lg shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"><X size={18} /></button>
+          <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-950"><X size={18} /></button>
         </div>
         {children}
       </div>

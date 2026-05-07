@@ -36,32 +36,32 @@ export default function ProjectDetailPage() {
       content: (
         <div className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 text-slate-400 text-sm mb-1"><Target size={14} />Missions</div>
-              <p className="text-white font-semibold">{missionTotal}</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><Target size={14} className="text-cyan-700" />Missions</div>
+              <p className="text-slate-950 font-semibold">{missionTotal}</p>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 text-slate-400 text-sm mb-1"><MapPin size={14} />Location</div>
-              <p className="text-white font-semibold">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><MapPin size={14} className="text-cyan-700" />Location</div>
+              <p className="text-slate-950 font-semibold">
                 {hasLocation ? `${project.latitude!.toFixed(6)}, ${project.longitude!.toFixed(6)}` : 'Not set'}
               </p>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 text-slate-400 text-sm mb-1"><Calendar size={14} />Created</div>
-              <p className="text-white font-semibold">{formatDate(project.createdAt)}</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><Calendar size={14} className="text-cyan-700" />Created</div>
+              <p className="text-slate-950 font-semibold">{formatDate(project.createdAt)}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_18rem] gap-5">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-              <h3 className="text-white font-semibold">Project Notes</h3>
-              <p className="text-slate-400 text-sm mt-2 leading-6">
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+              <h3 className="text-slate-950 font-semibold">Project Notes</h3>
+              <p className="text-slate-600 text-sm mt-2 leading-6">
                 {project.description || 'No description has been added for this project yet.'}
               </p>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-              <h3 className="text-white font-semibold">Next Step</h3>
-              <p className="text-slate-400 text-sm mt-2 leading-6">
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+              <h3 className="text-slate-950 font-semibold">Next Step</h3>
+              <p className="text-slate-600 text-sm mt-2 leading-6">
                 Add a mission to upload flight data, review captures, and generate exports.
               </p>
               <div className="mt-4">
@@ -91,7 +91,7 @@ export default function ProjectDetailPage() {
       // UI-06 fix: ProjectMap only rendered here, not duplicated in overview tab
       content: projectCoords
         ? <ProjectMapDynamic latitude={projectCoords.latitude} longitude={projectCoords.longitude} missions={missions} />
-        : <p className="text-slate-400 text-center py-12">No location set for this project.</p>,
+        : <p className="text-slate-500 text-center py-12">No location set for this project.</p>,
     },
     // BUG-09 fix: removed Exports tab from project page entirely.
     // Exports are per-mission — ExportPanel was incorrectly receiving projectId as missionId,

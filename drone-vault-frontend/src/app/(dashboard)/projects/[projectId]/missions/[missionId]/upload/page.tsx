@@ -61,17 +61,17 @@ export default function UploadPage() {
       <div className="flex gap-2 mb-8">
         {STEPS.map((s, i) => (
           <div key={s.id} className="flex items-center gap-2">
-            <button onClick={() => setStep(i)} className={`w-8 h-8 rounded-full text-sm font-medium transition-colors ${i === step ? 'bg-green-600 text-white' : i < step ? 'bg-green-800 text-green-300' : 'bg-slate-800 text-slate-500'}`}>{i + 1}</button>
-            {i < STEPS.length - 1 && <div className={`h-0.5 w-8 ${i < step ? 'bg-green-600' : 'bg-slate-800'}`} />}
+            <button onClick={() => setStep(i)} className={`w-8 h-8 rounded-full text-sm font-medium transition-colors ${i === step ? 'bg-cyan-700 text-white' : i < step ? 'bg-cyan-100 text-cyan-800' : 'bg-white border border-slate-200 text-slate-500'}`}>{i + 1}</button>
+            {i < STEPS.length - 1 && <div className={`h-0.5 w-8 ${i < step ? 'bg-cyan-600' : 'bg-slate-200'}`} />}
           </div>
         ))}
       </div>
 
       <div className="max-w-2xl space-y-6">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
           <div>
-            <h2 className="text-white font-semibold text-lg">{currentStep.label}</h2>
-            <p className="text-slate-400 text-sm mt-1">{currentStep.description}</p>
+            <h2 className="text-slate-950 font-semibold text-lg">{currentStep.label}</h2>
+            <p className="text-slate-500 text-sm mt-1">{currentStep.description}</p>
           </div>
           <FolderDropzone accept={ACCEPTS[currentStep.id]} label={currentStep.label} onFilesSelected={setFiles} />
           {uploadStatus[currentStep.id] && (
@@ -88,7 +88,7 @@ export default function UploadPage() {
 
         {/* Completed steps */}
         {Object.entries(uploadStatus).filter(([, v]) => v.status === 'complete').map(([stepId]) => (
-          <div key={stepId} className="flex items-center gap-3 text-green-400 text-sm">
+          <div key={stepId} className="flex items-center gap-3 text-cyan-700 text-sm">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
             {STEPS.find(s => s.id === stepId)?.label} uploaded
           </div>

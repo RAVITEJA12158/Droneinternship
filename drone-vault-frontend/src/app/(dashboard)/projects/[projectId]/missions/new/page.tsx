@@ -14,7 +14,7 @@ export default function NewMissionPage() {
       backHref={`/projects/${projectId}`}
       backLabel="Project"
     >
-      <div className="max-w-xl bg-slate-900 border border-slate-800 rounded-2xl p-6">
+      <div className="max-w-xl bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
         <MissionForm onSubmit={mutate} loading={isPending} />
       </div>
     </PageShell>

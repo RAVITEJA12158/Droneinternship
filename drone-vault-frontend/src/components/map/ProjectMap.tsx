@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Mission } from '@/types'
+import { MapPin, Navigation } from 'lucide-react'
 
 // Leaflet's default marker image paths do not resolve reliably in Next.js.
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -45,7 +46,10 @@ export function ProjectMap({ latitude, longitude, missions = [] }: Props) {
       center: coords,
       zoom: 13,
       scrollWheelZoom: false,
+      zoomControl: false,
     })
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map)
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap',
@@ -78,11 +82,32 @@ export function ProjectMap({ latitude, longitude, missions = [] }: Props) {
 
   if (!coords) {
     return (
-      <div className="h-64 bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
+      <div className="h-80 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-500 shadow-sm">
         Invalid project coordinates
       </div>
     )
   }
 
-  return <div ref={ref} className="w-full h-64 min-h-64 z-0 rounded-xl overflow-hidden" />
+  return (
+    <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-slate-950 font-semibold">
+            <MapPin size={18} className="text-cyan-700" />
+            Project Location
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            {coords[0].toFixed(6)}, {coords[1].toFixed(6)}
+          </p>
+        </div>
+        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-800">
+          <Navigation size={13} />
+          Interactive map
+        </div>
+      </div>
+      <div className="p-3">
+        <div ref={ref} className="w-full h-[28rem] min-h-80 z-0 rounded-xl overflow-hidden border border-slate-200" />
+      </div>
+    </section>
+  )
 }

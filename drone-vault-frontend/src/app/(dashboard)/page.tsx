@@ -18,27 +18,27 @@ export default function DashboardPage() {
     <PageShell title="Dashboard" subtitle="Welcome to DroneVault">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Total Projects" value={data?.totalProjects ?? 0} icon={FolderKanban} />
-        <StatCard label="Total Missions" value={data?.totalMissions ?? 0} icon={Target} color="text-blue-400" />
-        <StatCard label="Storage Used" value={formatBytes(data?.storageUsed ?? 0)} icon={HardDrive} color="text-amber-400" />
-        <StatCard label="Files Uploaded" value={data?.totalFiles ?? 0} icon={FileImage} color="text-purple-400" />
+        <StatCard label="Total Missions" value={data?.totalMissions ?? 0} icon={Target} color="text-indigo-600" />
+        <StatCard label="Storage Used" value={formatBytes(data?.storageUsed ?? 0)} icon={HardDrive} color="text-amber-600" />
+        <StatCard label="Files Uploaded" value={data?.totalFiles ?? 0} icon={FileImage} color="text-rose-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-white font-semibold text-lg">Recent Projects</h2>
-            <Link href="/projects" className="text-green-400 hover:text-green-300 text-sm">View all</Link>
+            <h2 className="text-slate-950 font-semibold text-lg">Recent Projects</h2>
+            <Link href="/projects" className="text-cyan-700 hover:text-cyan-900 text-sm font-medium">View all</Link>
           </div>
           <div className="space-y-3">
-            {data?.recentProjects?.slice(0, 5).map(p => <ProjectCard key={p.id} project={p} />) ?? <p className="text-slate-400 text-sm">No projects yet.</p>}
+            {data?.recentProjects?.slice(0, 5).map(p => <ProjectCard key={p.id} project={p} />) ?? <p className="text-slate-500 text-sm">No projects yet.</p>}
           </div>
         </div>
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-white font-semibold text-lg">Recent Missions</h2>
+            <h2 className="text-slate-950 font-semibold text-lg">Recent Missions</h2>
           </div>
           <div className="space-y-3">
-            {data?.recentMissions?.slice(0, 5).map(m => <MissionCard key={m.id} mission={m} projectId={m.projectId} />) ?? <p className="text-slate-400 text-sm">No missions yet.</p>}
+            {data?.recentMissions?.slice(0, 5).map(m => <MissionCard key={m.id} mission={m} projectId={m.projectId} />) ?? <p className="text-slate-500 text-sm">No missions yet.</p>}
           </div>
         </div>
       </div>

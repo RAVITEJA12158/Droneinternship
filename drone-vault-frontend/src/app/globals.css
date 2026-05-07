@@ -3,9 +3,9 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 15, 23, 42;
-  --background-end-rgb: 15, 23, 42;
+  --foreground-rgb: 17, 24, 39;
+  --background-start-rgb: 245, 247, 250;
+  --background-end-rgb: 245, 247, 250;
 }
 
 body {
@@ -16,5 +16,21 @@ body {
 .leaflet-container {
   height: 100%;
   width: 100%;
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
+  font-family: inherit;
+}
+
+.leaflet-control-zoom a,
+.leaflet-control-attribution {
+  border-color: #d8e0ea !important;
+  color: #334155 !important;
+}
+
+.leaflet-control-zoom a {
+  background: rgba(255, 255, 255, 0.95) !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: #ecfeff !important;
+  color: #0e7490 !important;
 }

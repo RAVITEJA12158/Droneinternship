@@ -34,27 +34,27 @@ export default function MissionDetailPage() {
       content: (
         <div className="space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 text-slate-400 text-sm mb-1"><Calendar size={14} />Capture Date</div>
-              <p className="text-white font-semibold">{formatDate(mission.captureDate)}</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><Calendar size={14} className="text-cyan-700" />Capture Date</div>
+              <p className="text-slate-950 font-semibold">{formatDate(mission.captureDate)}</p>
             </div>
             {mission.fileCount != null && (
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                <div className="flex items-center gap-2 text-slate-400 text-sm mb-1"><FileImage size={14} />Files</div>
-                <p className="text-white font-semibold">{mission.fileCount}</p>
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><FileImage size={14} className="text-cyan-700" />Files</div>
+                <p className="text-slate-950 font-semibold">{mission.fileCount}</p>
               </div>
             )}
             {mission.storageUsed != null && (
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                <div className="flex items-center gap-2 text-slate-400 text-sm mb-1"><HardDrive size={14} />Storage</div>
-                <p className="text-white font-semibold">{formatBytes(mission.storageUsed)}</p>
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><HardDrive size={14} className="text-cyan-700" />Storage</div>
+                <p className="text-slate-950 font-semibold">{formatBytes(mission.storageUsed)}</p>
               </div>
             )}
           </div>
           {mission.notes && (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-slate-400 text-sm font-medium mb-2">Notes</p>
-              <p className="text-slate-300">{mission.notes}</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+              <p className="text-slate-500 text-sm font-medium mb-2">Notes</p>
+              <p className="text-slate-700">{mission.notes}</p>
             </div>
           )}
         </div>
@@ -66,7 +66,7 @@ export default function MissionDetailPage() {
       id: 'capturesets', label: 'Capture Sets',
       content: captureSets.length
         ? <div className="space-y-3">{captureSets.map(cs => <CaptureSetCard key={cs.id} captureSet={cs} />)}</div>
-        : <p className="text-slate-400 text-center py-12">No capture sets yet.</p>,
+        : <p className="text-slate-500 text-center py-12">No capture sets yet.</p>,
     },
     { id: 'orthomosaics', label: 'Orthomosaics', content: <OrthomosaicViewer orthomosaics={orthomosaics ?? []} /> },
     { id: 'map', label: 'Map', content: <MissionMapDynamic captureSets={captureSets} /> },

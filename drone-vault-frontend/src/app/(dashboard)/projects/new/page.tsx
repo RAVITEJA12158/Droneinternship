@@ -7,7 +7,7 @@ export default function NewProjectPage() {
   const { mutate, isPending } = useCreateProject()
   return (
     <PageShell title="New Project" subtitle="Create a new drone project" backHref="/projects" backLabel="Projects">
-      <div className="max-w-xl bg-slate-900 border border-slate-800 rounded-2xl p-6">
+      <div className="max-w-xl bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
         <ProjectForm onSubmit={mutate} loading={isPending} />
       </div>
     </PageShell>

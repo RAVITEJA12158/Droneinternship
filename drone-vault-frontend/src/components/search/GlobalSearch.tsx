@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import { useSearch } from '@/hooks/useSearch'
 import { useRouter } from 'next/navigation'
@@ -17,29 +17,29 @@ export function GlobalSearch() {
   }, [])
 
   return (
-    <div ref={ref} className="relative w-full max-w-md">
+    <div ref={ref} className="relative w-full max-w-xl">
       <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+        <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
-          value={query} onChange={e => { setQuery(e.target.value); setOpen(true) }}
-          placeholder="Search projects, missions…"
-          className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
-          // UI-04 fix: close dropdown on Escape key or when focus leaves the input
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true) }}
+          placeholder="Search projects, missions..."
+          className="w-full h-10 bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-950 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-600 focus:border-cyan-600"
           onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery('') } }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
         />
       </div>
       {open && query && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-800 rounded-xl shadow-xl z-50 max-h-80 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-80 overflow-y-auto">
           {isSearching ? (
-            <p className="p-4 text-slate-400 text-sm">Searching…</p>
+            <p className="p-4 text-slate-500 text-sm">Searching...</p>
           ) : results ? (
             <>
               {results.projects.length > 0 && (
                 <div>
                   <p className="px-4 py-2 text-xs text-slate-500 font-semibold uppercase tracking-wider">Projects</p>
                   {results.projects.map(p => (
-                    <button key={p.id} onClick={() => { router.push(`/projects/${p.id}`); setOpen(false); setQuery('') }} className="w-full text-left px-4 py-2.5 hover:bg-slate-800 text-sm text-white transition-colors">
+                    <button key={p.id} onClick={() => { router.push(`/projects/${p.id}`); setOpen(false); setQuery('') }} className="w-full text-left px-4 py-2.5 hover:bg-cyan-50 text-sm text-slate-800 transition-colors">
                       {p.name}
                     </button>
                   ))}
@@ -49,14 +49,14 @@ export function GlobalSearch() {
                 <div>
                   <p className="px-4 py-2 text-xs text-slate-500 font-semibold uppercase tracking-wider">Missions</p>
                   {results.missions.map(m => (
-                    <button key={m.id} onClick={() => { router.push(`/projects/${m.projectId}/missions/${m.id}`); setOpen(false); setQuery('') }} className="w-full text-left px-4 py-2.5 hover:bg-slate-800 text-sm text-white transition-colors">
+                    <button key={m.id} onClick={() => { router.push(`/projects/${m.projectId}/missions/${m.id}`); setOpen(false); setQuery('') }} className="w-full text-left px-4 py-2.5 hover:bg-cyan-50 text-sm text-slate-800 transition-colors">
                       {m.name}
                     </button>
                   ))}
                 </div>
               )}
               {results.projects.length === 0 && results.missions.length === 0 && (
-                <p className="p-4 text-slate-400 text-sm">No results found</p>
+                <p className="p-4 text-slate-500 text-sm">No results found</p>
               )}
             </>
           ) : null}
