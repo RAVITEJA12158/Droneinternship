@@ -27,6 +27,8 @@ export interface Mission {
   captureDate: string
   notes?: string
   fileCount?: number
+  captureSetCount?: number
+  orthomosaicCount?: number
   storageUsed?: number
   createdAt: string
   updatedAt: string

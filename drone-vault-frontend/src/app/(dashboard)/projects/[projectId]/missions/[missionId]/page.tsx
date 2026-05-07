@@ -14,7 +14,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { formatDate } from '@/lib/utils/formatDate'
 import { formatBytes } from '@/lib/utils/formatBytes'
-import { Calendar, FileImage, HardDrive, Upload } from 'lucide-react'
+import { Calendar, FileImage, HardDrive, Layers, ScanLine, Upload } from 'lucide-react'
 import Link from 'next/link'
 
 function CaptureSetsTab({ missionId }: { missionId: string }) {
@@ -80,7 +80,7 @@ export default function MissionDetailPage() {
       id: 'summary', label: 'Summary',
       content: (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
               <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><Calendar size={14} className="text-cyan-700" />Capture Date</div>
               <p className="text-slate-950 font-semibold">{formatDate(mission.captureDate)}</p>
@@ -89,6 +89,18 @@ export default function MissionDetailPage() {
               <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                 <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><FileImage size={14} className="text-cyan-700" />Files</div>
                 <p className="text-slate-950 font-semibold">{mission.fileCount}</p>
+              </div>
+            )}
+            {mission.captureSetCount != null && (
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><ScanLine size={14} className="text-cyan-700" />Capture Sets</div>
+                <p className="text-slate-950 font-semibold">{mission.captureSetCount}</p>
+              </div>
+            )}
+            {mission.orthomosaicCount != null && (
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-slate-500 text-sm mb-1"><Layers size={14} className="text-cyan-700" />Orthomosaics</div>
+                <p className="text-slate-950 font-semibold">{mission.orthomosaicCount}</p>
               </div>
             )}
             {mission.storageUsed != null && (

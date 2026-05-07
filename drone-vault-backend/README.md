@@ -5,25 +5,19 @@ Node.js + Express + Prisma + PostgreSQL backend for the Drone Agriculture Data M
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
 npm install
-
-# 2. Copy and fill env
 cp .env.example .env
-
-# 3. Generate Prisma client & run migrations
 npx prisma migrate dev --name init
-
-# 4. Start dev server
 npm run dev
 ```
 
 ## Prerequisites
+
 - Node.js 20+
 - PostgreSQL 15
-- Redis (for BullMQ background jobs)
 
 ## API Base URL
+
 `http://localhost:4000/api`
 
 ## Key Endpoints
@@ -36,24 +30,29 @@ npm run dev
 | POST | /projects | Create project |
 | GET | /projects/:id/missions | List missions |
 | POST | /missions/:id/upload/rgb | Upload RGB images |
-| POST | /missions/:id/upload/multispectral | Upload MS TIFFs |
+| POST | /missions/:id/upload/multispectral | Upload multispectral TIFFs |
 | POST | /missions/:id/upload/orthomosaic | Upload orthomosaics |
-| GET | /missions/:id/files | List files (paginated) |
+| GET | /missions/:id/files | List files, paginated |
 | GET | /missions/:id/capture-sets | List capture sets |
-| POST | /missions/:id/export/zip | Queue ZIP export |
+| GET | /orthomosaics/:id/preview | View generated JPEG preview |
+| GET | /orthomosaics/:id/download | Download original orthomosaic |
+| POST | /missions/:id/export/zip | Create ZIP export |
 | GET | /dashboard/stats | Dashboard stats |
 | GET | /search?q= | Global search |
 
 ## Storage Layout
 
-```
+```text
 STORAGE_ROOT/
-  projects/{projectId}/{missionId}/
-    plan/         ← mission plan files
-    raw/rgb/      ← RGB JPGs
-    raw/multispectral/  ← MS TIFFs
-    orthomosaic/rgb|multispectral|ndvi|dsm/
-    thumbnails/   ← auto-generated
-    exports/      ← ZIP/PDF exports
-    temp/         ← upload staging
+  projects/{projectName}/{missionName}/
+    plan/                         mission plan files
+    raw/rgb/                      RGB JPGs
+    raw/multispectral/           multispectral TIFFs
+    orthomosaic/rgb/
+    orthomosaic/multispectral/
+    orthomosaic/ndvi/
+    orthomosaic/dsm/
+    thumbnails/                   generated image previews
+    exports/                      ZIP and JSON exports
+  temp/                           upload staging
 ```

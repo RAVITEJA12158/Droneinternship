@@ -19,6 +19,8 @@ function normalizeMission(mission: MissionResponse): Mission {
   return {
     ...mission,
     fileCount: mission.fileCount ?? mission._count?.files,
+    captureSetCount: mission.captureSetCount ?? mission._count?.captureSets,
+    orthomosaicCount: mission.orthomosaicCount ?? mission._count?.orthomosaics,
   }
 }
 

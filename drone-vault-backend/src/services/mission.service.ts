@@ -7,6 +7,42 @@ import fs from "fs";
 import { env } from "../config/env";
 import { sanitizeName } from "../config/storage";
 
+type MissionWithCounts = {
+  id: string;
+  _count?: {
+    files?: number;
+    captureSets?: number;
+    orthomosaics?: number;
+  };
+};
+
+async function attachMissionStats<T extends MissionWithCounts>(missions: T[]) {
+  if (!missions.length) return missions.map((mission) => serializeMission(mission, 0));
+
+  const storageByMission = new Map<string, number>();
+  const aggregates = await prisma.file.groupBy({
+    by: ["missionId"],
+    where: { missionId: { in: missions.map((mission) => mission.id) } },
+    _sum: { size: true },
+  });
+
+  for (const aggregate of aggregates) {
+    storageByMission.set(aggregate.missionId, Number(aggregate._sum.size ?? 0));
+  }
+
+  return missions.map((mission) => serializeMission(mission, storageByMission.get(mission.id) ?? 0));
+}
+
+function serializeMission<T extends MissionWithCounts>(mission: T, storageUsed: number) {
+  return {
+    ...mission,
+    fileCount: mission._count?.files ?? 0,
+    captureSetCount: mission._count?.captureSets ?? 0,
+    orthomosaicCount: mission._count?.orthomosaics ?? 0,
+    storageUsed,
+  };
+}
+
 export async function listMissions(projectId: string, userId: string, page: number, limit: number) {
   await assertProjectOwner(projectId, userId);
   const [data, total] = await Promise.all([
@@ -20,7 +56,7 @@ export async function listMissions(projectId: string, userId: string, page: numb
     }),
     prisma.mission.count({ where: { projectId } }),
   ]);
-  return paginatedResponse(data, total, page, limit);
+  return paginatedResponse(await attachMissionStats(data), total, page, limit);
 }
 
 export async function createMission(
@@ -65,7 +101,8 @@ export async function getMission(id: string, userId: string) {
     err.statusCode = 404;
     throw err;
   }
-  return mission;
+  const [missionWithStats] = await attachMissionStats([mission]);
+  return missionWithStats;
 }
 
 export async function updateMission(id: string, userId: string, input: UpdateMissionInput) {
