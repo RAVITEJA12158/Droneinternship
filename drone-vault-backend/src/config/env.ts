@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import path from "path";
 dotenv.config();
 
 function required(key: string): string {
@@ -7,13 +8,20 @@ function required(key: string): string {
   return val;
 }
 
+const storageRoot = required("STORAGE_ROOT");
+// ENV-02 fix: a relative STORAGE_ROOT silently resolves relative to process.cwd(),
+// which breaks on restarts from different directories.
+if (!path.isAbsolute(storageRoot)) {
+  throw new Error(`STORAGE_ROOT must be an absolute path, got: "${storageRoot}"`);
+}
+
 export const env = {
   DATABASE_URL: required("DATABASE_URL"),
   JWT_SECRET: required("JWT_SECRET"),
   JWT_EXPIRY: process.env.JWT_EXPIRY || "7d",
   COOKIE_SECRET: required("COOKIE_SECRET"),
-  STORAGE_ROOT: required("STORAGE_ROOT"),
-  REDIS_URL: process.env.REDIS_URL || "redis://localhost:6379",
+  STORAGE_ROOT: storageRoot,
+  // BUG-16 fix: REDIS_URL removed — BullMQ/Redis workers were removed from this project
   PORT: parseInt(process.env.PORT || "4000", 10),
   NODE_ENV: process.env.NODE_ENV || "development",
 };

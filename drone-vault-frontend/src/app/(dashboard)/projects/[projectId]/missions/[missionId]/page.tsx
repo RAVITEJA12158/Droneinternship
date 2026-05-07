@@ -8,7 +8,7 @@ import { ImageGallery } from '@/components/gallery/ImageGallery'
 import { CaptureSetCard } from '@/components/gallery/CaptureSetCard'
 import { OrthomosaicViewer } from '@/components/orthomosaic/OrthomosaicViewer'
 import { ExportPanel } from '@/components/export/ExportPanel'
-import { MissionMap } from '@/components/map/MissionMap'
+import { MissionMapDynamic } from '@/components/map/MissionMapDynamic'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -69,7 +69,7 @@ export default function MissionDetailPage() {
         : <p className="text-slate-400 text-center py-12">No capture sets yet.</p>,
     },
     { id: 'orthomosaics', label: 'Orthomosaics', content: <OrthomosaicViewer orthomosaics={orthomosaics ?? []} /> },
-    { id: 'map', label: 'Map', content: <MissionMap captureSets={captureSets} /> },
+    { id: 'map', label: 'Map', content: <MissionMapDynamic captureSets={captureSets} /> },
     { id: 'exports', label: 'Exports', content: <ExportPanel missionId={missionId} /> },
   ]
 
@@ -77,6 +77,8 @@ export default function MissionDetailPage() {
     <PageShell
       title={mission.name}
       subtitle={formatDate(mission.captureDate)}
+      backHref={`/projects/${projectId}`}
+      backLabel="Project"
       actions={
         <Link href={`/projects/${projectId}/missions/${missionId}/upload`}>
           <Button><Upload size={16} />Upload Data</Button>

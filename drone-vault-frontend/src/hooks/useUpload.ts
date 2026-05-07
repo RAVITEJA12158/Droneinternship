@@ -1,6 +1,9 @@
 'use client'
 import { useState, useCallback } from 'react'
-import axios from 'axios'
+// BUG-10 fix: use the configured api instance (not raw axios) so that:
+// 1. The 401 redirect interceptor is applied
+// 2. baseURL is always set from the configured instance (no undefined URL risk)
+import api from '@/lib/api/axios'
 import { useUIStore } from '@/store/ui.store'
 import { UploadJob } from '@/types'
 
@@ -35,20 +38,16 @@ export function useUpload({ missionId, onComplete }: UploadOptions) {
         const formData = new FormData()
         files.forEach((file) => formData.append(fieldName, file))
 
-        await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL}${endpoint}`,
-          formData,
-          {
-            withCredentials: true,
-            headers: { 'Content-Type': 'multipart/form-data' },
-            onUploadProgress: (evt) => {
-              const progress = evt.total
-                ? Math.round((evt.loaded * 100) / evt.total)
-                : 0
-              updateUploadJob(jobId, { progress })
-            },
-          }
-        )
+        // BUG-10 fix: api instance has baseURL set + interceptors; no manual withCredentials needed
+        await api.post(endpoint, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (evt) => {
+            const progress = evt.total
+              ? Math.round((evt.loaded * 100) / evt.total)
+              : 0
+            updateUploadJob(jobId, { progress })
+          },
+        })
 
         updateUploadJob(jobId, { status: 'complete', progress: 100 })
         onComplete?.()

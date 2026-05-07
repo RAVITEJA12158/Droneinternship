@@ -51,7 +51,12 @@ export default function UploadPage() {
   }
 
   return (
-    <PageShell title="Upload Data" subtitle={`Mission upload wizard — Step ${step + 1} of ${STEPS.length}`}>
+    <PageShell
+      title="Upload Data"
+      subtitle={`Mission upload wizard - Step ${step + 1} of ${STEPS.length}`}
+      backHref={`/projects/${projectId}/missions/${missionId}`}
+      backLabel="Mission"
+    >
       {/* Step indicator */}
       <div className="flex gap-2 mb-8">
         {STEPS.map((s, i) => (

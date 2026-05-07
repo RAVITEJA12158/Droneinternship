@@ -27,7 +27,7 @@ export default function ProjectsPage() {
         </Link>
       }
     >
-      <SearchFilters value={search} onChange={setSearch} placeholder="Search projects…" />
+      <SearchFilters value={search} onChange={setSearch} placeholder="Search projects..." />
       {isLoading ? <div className="flex justify-center py-16"><Spinner size="lg" /></div>
         : isError ? <ErrorState />
         : <ProjectList projects={filtered} />}

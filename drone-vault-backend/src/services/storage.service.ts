@@ -2,10 +2,17 @@ import fs from "fs";
 import path from "path";
 import { toRelativePath, toAbsolutePath } from "../config/storage";
 
-export function moveFile(tempPath: string, destPath: string): void {
+export async function moveFile(tempPath: string, destPath: string): Promise<void> {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  fs.copyFileSync(tempPath, destPath);
-  fs.unlinkSync(tempPath);
+  try {
+    // BUG-15 fix: renameSync is O(1) atomic when temp and dest are on the same filesystem.
+    // This avoids blocking the Node.js event loop for large files (e.g. 500MB TIFFs).
+    fs.renameSync(tempPath, destPath);
+  } catch {
+    // Cross-device move (different filesystems) — fall back to async copy + unlink
+    await fs.promises.copyFile(tempPath, destPath);
+    await fs.promises.unlink(tempPath);
+  }
 }
 
 export function deleteFile(relativePath: string): void {

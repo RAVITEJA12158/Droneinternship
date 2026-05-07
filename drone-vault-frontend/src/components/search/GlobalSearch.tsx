@@ -24,6 +24,9 @@ export function GlobalSearch() {
           value={query} onChange={e => { setQuery(e.target.value); setOpen(true) }}
           placeholder="Search projects, missions…"
           className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+          // UI-04 fix: close dropdown on Escape key or when focus leaves the input
+          onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery('') } }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
         />
       </div>
       {open && query && (

@@ -32,7 +32,12 @@ export async function groupIntoCaptureSets(
 
   let created = 0;
   for (const [shotNumber, groupFiles] of groups) {
-    const captureSet = await prisma.captureSet.create({
+    // BUG-12 fix: use upsert to avoid creating duplicate CaptureSets when
+    // re-uploading files or adding additional bands to an existing mission.
+    const existing = await prisma.captureSet.findFirst({
+      where: { missionId, shotNumber },
+    });
+    const captureSet = existing ?? await prisma.captureSet.create({
       data: { missionId, shotNumber },
     });
     await prisma.file.updateMany({

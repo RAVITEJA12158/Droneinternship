@@ -37,7 +37,9 @@ export async function exportJson(missionId: string, userId: string) {
       notes: mission.notes,
     },
     fileCount: fileAgg._count,
-    storageUsed: fileAgg._sum.size ?? 0n,
+    // BUG-21 fix: JSON.stringify cannot serialize BigInt — convert to Number first.
+    // File sizes are stored as bigint in Prisma but are safe to cast for JSON output.
+    storageUsed: Number(fileAgg._sum.size ?? 0),
     captureSets: mission.captureSets,
     orthomosaics: mission.orthomosaics,
   };

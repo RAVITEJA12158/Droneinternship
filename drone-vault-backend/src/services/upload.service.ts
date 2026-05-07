@@ -49,7 +49,7 @@ export async function processRgbUpload(
 
   for (const file of files) {
     const destPath = path.join(destDir, file.originalname);
-    moveFile(file.path, destPath);
+    await moveFile(file.path, destPath);
     const checksum = await computeMD5(destPath);
     const size = fileSize(destPath);
     const relativePath = toRelativePath(destPath);
@@ -75,7 +75,7 @@ export async function processMultispectralUpload(
 
   for (const file of files) {
     const destPath = path.join(destDir, file.originalname);
-    moveFile(file.path, destPath);
+    await moveFile(file.path, destPath);
     const checksum = await computeMD5(destPath);
     const size = fileSize(destPath);
     const relativePath = toRelativePath(destPath);
@@ -98,7 +98,7 @@ export async function processPlanUpload(
 ) {
   const destDir = path.join(env.STORAGE_ROOT, "projects", projectId, missionId, "plan");
   const destPath = path.join(destDir, file.originalname);
-  moveFile(file.path, destPath);
+  await moveFile(file.path, destPath);
   const checksum = await computeMD5(destPath);
   const size = fileSize(destPath);
   const relativePath = toRelativePath(destPath);
@@ -126,7 +126,7 @@ export async function processOrthomosaicUpload(
     if (!file) continue;
     const destDir = path.join(env.STORAGE_ROOT, "projects", projectId, missionId, "orthomosaic", key);
     const destPath = path.join(destDir, file.originalname);
-    moveFile(file.path, destPath);
+    await moveFile(file.path, destPath);
     const relativePath = toRelativePath(destPath);
 
     const ortho = await prisma.orthomosaic.create({

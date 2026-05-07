@@ -4,7 +4,9 @@ import { FileImage } from 'lucide-react'
 
 interface Props { file: DroneFile; onClick?: () => void }
 export function ThumbnailCard({ file, onClick }: Props) {
-  const thumbUrl = file.thumbnailPath ? `${process.env.NEXT_PUBLIC_API_URL}${file.thumbnailPath}` : null
+  // BUG-07 fix: thumbnailPath is a filesystem path, not a URL segment.
+  // Use the dedicated API helper which builds the correct /api/files/:id/thumbnail URL.
+  const thumbUrl = file.thumbnailPath ? filesApi.getThumbnailUrl(file.id) : null
   return (
     <div onClick={onClick} className="aspect-square bg-slate-800 rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-green-500 transition-all group">
       {thumbUrl ? (

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const createMissionSchema = z.object({
   name: z.string().min(1).max(200),
-  captureDate: z.string().datetime(),
+  captureDate: z.string().refine((val) => !isNaN(Date.parse(val)), { message: "Invalid date string" }),
   notes: z.string().max(2000).optional(),
 });
 

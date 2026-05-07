@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, FolderOpen, X } from 'lucide-react'
+import { Upload, FolderOpen, X, AlertCircle } from 'lucide-react'
 import { formatBytes } from '@/lib/utils/formatBytes'
 
 interface Props { accept: string[]; label: string; onFilesSelected: (files: File[]) => void }
@@ -15,7 +15,20 @@ export function FolderDropzone({ accept, label, onFilesSelected }: Props) {
     onFilesSelected(filtered)
   }, [accept, onFilesSelected])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, multiple: true })
+  // BUG-14 fix: pass accept to useDropzone so the OS file picker filters correctly
+  // and fileRejections are populated for wrong-type drops.
+  const acceptObj = accept.reduce<Record<string, string[]>>((acc, ext) => {
+    const mime = `application/${ext.replace('.', '')}`
+    acc[mime] = [ext]
+    return acc
+  }, {})
+
+  const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
+    onDrop,
+    multiple: true,
+    accept: acceptObj,
+  })
+
   const totalSize = files.reduce((s, f) => s + f.size, 0)
 
   return (
@@ -35,6 +48,13 @@ export function FolderDropzone({ accept, label, onFilesSelected }: Props) {
           </div>
         </div>
       </div>
+      {/* BUG-14 fix: surface rejected file count so users know why files were dropped */}
+      {fileRejections.length > 0 && (
+        <div className="mt-2 flex items-center gap-2 text-sm text-amber-400">
+          <AlertCircle size={14} />
+          {fileRejections.length} file{fileRejections.length > 1 ? 's' : ''} ignored — only {accept.join(', ')} files are accepted
+        </div>
+      )}
       {files.length > 0 && (
         <div className="mt-3 bg-slate-800/50 rounded-lg p-4 flex items-center justify-between">
           <div className="text-sm">

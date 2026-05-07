@@ -8,7 +8,12 @@ export default function NewMissionPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const { mutate, isPending } = useCreateMission(projectId)
   return (
-    <PageShell title="New Mission" subtitle="Add a flight mission to this project">
+    <PageShell
+      title="New Mission"
+      subtitle="Add a flight mission to this project"
+      backHref={`/projects/${projectId}`}
+      backLabel="Project"
+    >
       <div className="max-w-xl bg-slate-900 border border-slate-800 rounded-2xl p-6">
         <MissionForm onSubmit={mutate} loading={isPending} />
       </div>
