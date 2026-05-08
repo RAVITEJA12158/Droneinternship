@@ -17,7 +17,10 @@ import searchRoutes from "./routes/search.routes";
 const app = express();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  origin: (origin, callback) => {
+    // Allows any origin (needed for local LAN IP access on custom networks)
+    callback(null, true);
+  },
   credentials: true,
 }));
 app.use(express.json());
