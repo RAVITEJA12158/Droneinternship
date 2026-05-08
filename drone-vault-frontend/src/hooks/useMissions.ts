@@ -61,6 +61,9 @@ export function useDeleteMission(projectId: string) {
   return useMutation({
     mutationFn: (id: string) => missionsApi.delete(id),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
       queryClient.invalidateQueries({ queryKey: ['missions', 'project', projectId] })
       toast.success('Mission deleted')
       router.push(`/projects/${projectId}`)

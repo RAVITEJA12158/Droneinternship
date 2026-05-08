@@ -10,6 +10,7 @@ import { ProjectMapDynamic } from '@/components/map/ProjectMapDynamic'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { DeleteProjectButton } from '@/components/project/DeleteProjectButton'
 import { Calendar, Edit3, MapPin, Plus, Save, Target, X } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils/formatDate'
@@ -172,9 +173,12 @@ export default function ProjectDetailPage() {
       backHref="/projects"
       backLabel="Projects"
       actions={
-        <Link href={`/projects/${projectId}/missions/new`}>
-          <Button><Plus size={16} />New Mission</Button>
-        </Link>
+        <>
+          <DeleteProjectButton projectId={projectId} projectName={project.name} />
+          <Link href={`/projects/${projectId}/missions/new`}>
+            <Button><Plus size={16} />New Mission</Button>
+          </Link>
+        </>
       }
     >
       <Tabs tabs={tabs} />

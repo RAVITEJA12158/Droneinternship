@@ -13,6 +13,7 @@ import { MissionMapDynamic } from '@/components/map/MissionMapDynamic'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { DeleteMissionButton } from '@/components/mission/DeleteMissionButton'
 import { formatDate } from '@/lib/utils/formatDate'
 import { formatBytes } from '@/lib/utils/formatBytes'
 import { Calendar, Edit3, FileImage, HardDrive, Layers, Save, ScanLine, Upload, X } from 'lucide-react'
@@ -189,9 +190,16 @@ export default function MissionDetailPage() {
       backHref={`/projects/${projectId}`}
       backLabel="Project"
       actions={
-        <Link href={`/projects/${projectId}/missions/${missionId}/upload`}>
-          <Button><Upload size={16} />Upload Data</Button>
-        </Link>
+        <>
+          <DeleteMissionButton
+            projectId={projectId}
+            missionId={missionId}
+            missionName={mission.name}
+          />
+          <Link href={`/projects/${projectId}/missions/${missionId}/upload`}>
+            <Button><Upload size={16} />Upload Data</Button>
+          </Link>
+        </>
       }
     >
       <Tabs tabs={tabs} />
