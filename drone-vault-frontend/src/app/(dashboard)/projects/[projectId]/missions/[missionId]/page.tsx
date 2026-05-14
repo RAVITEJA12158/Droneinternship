@@ -9,6 +9,7 @@ import { ImageGallery } from '@/components/gallery/ImageGallery'
 import { CaptureSetCard } from '@/components/gallery/CaptureSetCard'
 import { OrthomosaicViewer } from '@/components/orthomosaic/OrthomosaicViewer'
 import { ExportPanel } from '@/components/export/ExportPanel'
+import { LabellingPanel } from '@/components/labelling/LabellingPanel'
 import { MissionMapDynamic } from '@/components/map/MissionMapDynamic'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
@@ -58,6 +59,15 @@ function OrthomosaicsTab({ missionId }: { missionId: string }) {
   if (isError) return <ErrorState />
 
   return <OrthomosaicViewer orthomosaics={data ?? []} />
+}
+
+function LabellingTab({ missionId }: { missionId: string }) {
+  const { data, isLoading, isError } = useOrthomosaics(missionId)
+
+  if (isLoading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+  if (isError) return <ErrorState />
+
+  return <LabellingPanel missionId={missionId} orthomosaics={data ?? []} />
 }
 
 function MissionMapTab({ missionId }: { missionId: string }) {
@@ -179,6 +189,7 @@ export default function MissionDetailPage() {
     { id: 'multispectral', label: 'Multispectral', content: <ImageGallery missionId={missionId} fileType="MS_TIF" /> },
     { id: 'capturesets', label: 'Capture Sets', content: <CaptureSetsTab missionId={missionId} /> },
     { id: 'orthomosaics', label: 'Orthomosaics', content: <OrthomosaicsTab missionId={missionId} /> },
+    { id: 'labelling', label: 'Labelling', content: <LabellingTab missionId={missionId} /> },
     { id: 'map', label: 'Map', content: <MissionMapTab missionId={missionId} /> },
     { id: 'exports', label: 'Exports', content: <ExportPanel missionId={missionId} /> },
   ]

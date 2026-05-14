@@ -15,6 +15,7 @@ npm run dev
 
 - Node.js 20+
 - PostgreSQL 15
+- Python 3.10+ with `rasterio`, `numpy`, `matplotlib`, `scikit-image`, and `scikit-learn` for multispectral labelling
 
 ## API Base URL
 
@@ -34,6 +35,8 @@ npm run dev
 | POST | /missions/:id/upload/orthomosaic | Upload orthomosaics |
 | GET | /missions/:id/files | List files, paginated |
 | GET | /missions/:id/capture-sets | List capture sets |
+| POST | /missions/:id/labelling/start | Start multispectral labelling |
+| GET | /missions/:id/labelling | Get labelling status and outputs |
 | GET | /orthomosaics/:id/preview | View generated JPEG preview |
 | GET | /orthomosaics/:id/download | Download original orthomosaic |
 | POST | /missions/:id/export/zip | Create ZIP export |
@@ -52,6 +55,7 @@ STORAGE_ROOT/
     orthomosaic/multispectral/
     orthomosaic/ndvi/
     orthomosaic/dsm/
+    labelling/{jobId}/              NDVI, NDRE, and label map outputs
     thumbnails/                   generated image previews
     exports/                      ZIP and JSON exports
   temp/                           upload staging

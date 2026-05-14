@@ -1,0 +1,44 @@
+import api from './axios'
+import { LabellingJob } from '@/types'
+
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
+
+function withApiBase(url?: string | null) {
+  if (!url) return url
+  if (/^https?:\/\//.test(url)) return url
+  return `${apiBaseUrl}${url}`
+}
+
+function normalize(job: LabellingJob | null): LabellingJob | null {
+  if (!job) return null
+  return {
+    ...job,
+    labelMapUrl: withApiBase(job.labelMapUrl),
+    ndviMapUrl: withApiBase(job.ndviMapUrl),
+    ndreMapUrl: withApiBase(job.ndreMapUrl),
+    stats: job.stats
+      ? {
+          ...job.stats,
+          visualizations: job.stats.visualizations
+            ? {
+                ...job.stats.visualizations,
+                superpixelsMapUrl: withApiBase(job.stats.visualizations.superpixelsMapUrl),
+                overlayMapUrl: withApiBase(job.stats.visualizations.overlayMapUrl),
+              }
+            : job.stats.visualizations,
+        }
+      : job.stats,
+  }
+}
+
+export const labellingApi = {
+  getByMission: async (missionId: string): Promise<LabellingJob | null> => {
+    const res = await api.get(`/api/missions/${missionId}/labelling`)
+    return normalize(res.data)
+  },
+
+  start: async (missionId: string): Promise<LabellingJob> => {
+    const res = await api.post(`/api/missions/${missionId}/labelling/start`)
+    return normalize(res.data) as LabellingJob
+  },
+}

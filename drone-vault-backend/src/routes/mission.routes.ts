@@ -5,6 +5,7 @@ import * as csCtrl from "../controllers/captureSet.controller";
 import * as orthoCtrl from "../controllers/orthomosaic.controller";
 import * as exportCtrl from "../controllers/export.controller";
 import * as uploadCtrl from "../controllers/upload.controller";
+import * as labellingCtrl from "../controllers/labelling.controller";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import { createMissionSchema, updateMissionSchema } from "../validations/mission.schema";
@@ -41,6 +42,11 @@ router.get("/missions/:id/capture-sets", csCtrl.list);
 
 // Orthomosaics
 router.get("/missions/:id/orthomosaics", orthoCtrl.list);
+
+// Labelling
+router.get("/missions/:id/labelling", labellingCtrl.getOne);
+router.post("/missions/:id/labelling/start", labellingCtrl.start);
+router.get("/labelling/maps", labellingCtrl.map);
 
 // Exports
 router.post("/missions/:id/export/zip", exportCtrl.exportZip);

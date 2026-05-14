@@ -101,11 +101,11 @@ export function useUpload({ missionId, onComplete }: UploadOptions) {
             if (name.includes('rgb')) return 'rgb'
             if (name.includes('multi') || name.includes('multispect') || name.endsWith('.tif') || name.endsWith('.tiff')) return 'multispectral'
             if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'rgb'
-            return 'rgb'
+            return 'multispectral'
           }
 
           files.forEach((file) => {
-            const field = orthoType || inferField(file)
+            const field = orthoType ?? inferField(file)
             formData.append(field, file)
           })
 
@@ -118,15 +118,19 @@ export function useUpload({ missionId, onComplete }: UploadOptions) {
           })
 
           updateUploadJob(jobId, { status: 'complete', progress: 100 })
+          onComplete?.()
         } catch (err) {
           updateUploadJob(jobId, { status: 'failed' })
           throw err
+        } finally {
+          setIsUploading(false)
         }
       }
 
-      post()
+      setIsUploading(true)
+      return post()
     },
-    [uploadFiles, missionId]
+    [addUploadJob, missionId, onComplete, updateUploadJob]
   )
 
   return { uploadRgb, uploadMultispectral, uploadPlan, uploadOrthomosaic, isUploading }

@@ -12,21 +12,22 @@ const STEPS = [
   { id: 'rgb', label: 'RGB Images', description: 'Upload .jpg/.jpeg files from RGB camera' },
   { id: 'multispectral', label: 'Multispectral', description: 'Upload .tif/.tiff files from multispectral camera' },
   { id: 'plan', label: 'Mission Plan', description: 'Upload .plan, .json, .waypoints, .kml, or .kmz file' },
-  { id: 'orthomosaic', label: 'Orthomosaics', description: 'Upload processed orthomosaic files (optional)' },
+  { id: 'orthomosaic-rgb', label: 'Normal Orthomosaic', description: 'Upload the normal RGB orthomosaic.' },
+  { id: 'orthomosaic-multispectral', label: 'Multispectral Orthomosaic', description: 'Upload the multispectral orthomosaic. Labelling uses this file to generate NDVI, NDRE, and classified outputs.' },
 ]
 
 const ACCEPTS: Record<string, string[]> = {
   rgb: ['.jpg', '.jpeg'],
   multispectral: ['.tif', '.tiff'],
   plan: ['.plan', '.json', '.waypoints', '.kml', '.kmz'],
-  orthomosaic: ['.tif', '.tiff', '.jpg'],
+  'orthomosaic-rgb': ['.tif', '.tiff', '.jpg', '.jpeg'],
+  'orthomosaic-multispectral': ['.tif', '.tiff'],
 }
 
 export default function UploadPage() {
   const { projectId, missionId } = useParams<{ projectId: string; missionId: string }>()
   const [step, setStep] = useState(0)
   const [files, setFiles] = useState<File[]>([])
-  const [orthoType, setOrthoType] = useState<'rgb' | 'multispectral' | 'ndvi' | 'dsm'>('rgb')
   const [uploadStatus, setUploadStatus] = useState<Record<string, { status: string; progress: number }>>({})
   const { uploadRgb, uploadMultispectral, uploadPlan, uploadOrthomosaic, isUploading } = useUpload({ missionId })
 
@@ -40,9 +41,16 @@ export default function UploadPage() {
       if (stepId === 'rgb') await uploadRgb(files)
       else if (stepId === 'multispectral') await uploadMultispectral(files)
       else if (stepId === 'plan') await uploadPlan(files)
-      else await uploadOrthomosaic(files, orthoType)
+      else if (stepId === 'orthomosaic-rgb') await uploadOrthomosaic(files, 'rgb')
+      else await uploadOrthomosaic(files, 'multispectral')
       setUploadStatus(prev => ({ ...prev, [stepId]: { status: 'complete', progress: 100 } }))
-      toast.success(`${currentStep.label} uploaded!`)
+      toast.success(
+        stepId === 'orthomosaic-multispectral'
+          ? 'Multispectral orthomosaic uploaded. Labelling started.'
+          : stepId === 'orthomosaic-rgb'
+            ? 'RGB orthomosaic uploaded.'
+          : `${currentStep.label} uploaded!`
+      )
       setFiles([])
       if (step < STEPS.length - 1) setStep(s => s + 1)
     } catch {
@@ -74,23 +82,6 @@ export default function UploadPage() {
             <h2 className="text-slate-950 font-semibold text-lg">{currentStep.label}</h2>
             <p className="text-slate-500 text-sm mt-1">{currentStep.description}</p>
           </div>
-          
-          {currentStep.id === 'orthomosaic' && (
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-slate-700">Orthomosaic Type</label>
-              <select
-                value={orthoType}
-                onChange={(e) => setOrthoType(e.target.value as any)}
-                className="w-full h-10 px-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm bg-white"
-              >
-                <option value="rgb">RGB Orthomosaic</option>
-                <option value="multispectral">Multispectral Orthomosaic</option>
-                <option value="ndvi">NDVI</option>
-                <option value="dsm">DSM (Digital Surface Model)</option>
-              </select>
-            </div>
-          )}
-
           <FolderDropzone accept={ACCEPTS[currentStep.id]} label={currentStep.label} onFilesSelected={setFiles} />
           {uploadStatus[currentStep.id] && (
             <UploadProgressBar progress={uploadStatus[currentStep.id].progress} status={uploadStatus[currentStep.id].status} label={currentStep.label} />

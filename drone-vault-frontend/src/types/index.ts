@@ -68,6 +68,56 @@ export interface Orthomosaic {
   createdAt: string
 }
 
+export interface LabellingClassStats {
+  id: number
+  name: string
+  color: string
+  pixels: number
+  percentage: number
+}
+
+export interface LabellingSegmentStats {
+  segment_id: number
+  class_id: number
+  cluster_id?: number
+  mean_ndvi: number
+  mean_ndre: number
+  area_pixels: number
+  confidence?: number
+}
+
+export interface LabellingVisualizations {
+  superpixelsMapUrl?: string | null
+  overlayMapUrl?: string | null
+}
+
+export interface LabellingStats {
+  labeling_method?: string
+  parameters?: Record<string, number>
+  ndvi?: Record<string, number>
+  ndre?: Record<string, number>
+  ndvi_percentiles?: Record<string, number>
+  ndre_percentiles?: Record<string, number>
+  classes?: Record<string, LabellingClassStats>
+  cluster_centers?: number[][]
+  segments?: LabellingSegmentStats[]
+  visualizations?: LabellingVisualizations
+  error?: string
+}
+
+export interface LabellingJob {
+  id: string
+  missionId: string
+  orthomosaicId: string
+  labelMapUrl?: string | null
+  ndviMapUrl?: string | null
+  ndreMapUrl?: string | null
+  stats?: LabellingStats | null
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DashboardStats {
   totalProjects: number
   totalMissions: number

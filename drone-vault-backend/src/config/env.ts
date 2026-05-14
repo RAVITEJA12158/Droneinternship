@@ -21,6 +21,7 @@ export const env = {
   JWT_EXPIRY: process.env.JWT_EXPIRY || "7d",
   COOKIE_SECRET: required("COOKIE_SECRET"),
   STORAGE_ROOT: storageRoot,
+  PYTHON_BIN: process.env.PYTHON_BIN || "python",
   // BUG-16 fix: REDIS_URL removed — BullMQ/Redis workers were removed from this project
   PORT: parseInt(process.env.PORT || "4000", 10),
   NODE_ENV: process.env.NODE_ENV || "development",
