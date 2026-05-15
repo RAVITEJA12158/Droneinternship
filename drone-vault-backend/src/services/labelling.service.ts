@@ -20,6 +20,7 @@ const OUTPUT_FILES = {
   ndviHistogram: "ndvi_histogram.png",
   ndreHistogram: "ndre_histogram.png",
   classDistribution: "class_distribution.png",
+  classDistributionPie: "class_distribution_pie.png",
   scatter: "ndvi_ndre_scatter.png",
   confidence: "confidence_map.png",
   summaryCsv: "dataset_summary.csv",
@@ -289,6 +290,7 @@ async function runLabellingJob(
         ndviHistogramUrl: outputRelative.ndviHistogram,
         ndreHistogramUrl: outputRelative.ndreHistogram,
         classDistributionUrl: outputRelative.classDistribution,
+        classDistributionPieUrl: outputRelative.classDistributionPie,
         ndviNdreScatterUrl: outputRelative.scatter,
       },
       artifacts: {

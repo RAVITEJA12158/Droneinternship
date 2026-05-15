@@ -196,6 +196,39 @@ def save_class_distribution(label_map: np.ndarray, path: str) -> None:
     plt.close()
 
 
+def save_class_distribution_pie(label_map: np.ndarray, path: str) -> None:
+    labels = []
+    counts = []
+    colors = []
+    for class_id, (name, _color, hex_color) in CLASS_INFO.items():
+        count = int(np.sum(label_map == class_id))
+        if count <= 0:
+            continue
+        labels.append(name)
+        counts.append(count)
+        colors.append(hex_color)
+
+    if not counts:
+        labels = ["No labelled pixels"]
+        counts = [1]
+        colors = ["#cbd5e1"]
+
+    plt.figure(figsize=(8, 8))
+    plt.pie(
+        counts,
+        labels=labels,
+        colors=colors,
+        autopct="%1.1f%%",
+        startangle=90,
+        counterclock=False,
+        textprops={"fontsize": 9},
+    )
+    plt.title("Class Distribution Percentage")
+    plt.tight_layout()
+    plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.04)
+    plt.close()
+
+
 def save_scatter(ndvi: np.ndarray, ndre: np.ndarray, path: str) -> None:
     valid = np.isfinite(ndvi) & np.isfinite(ndre)
     ndvi_values = ndvi[valid]
@@ -433,6 +466,7 @@ def process(args: argparse.Namespace) -> None:
     ndvi_histogram_path = os.path.join(args.output_dir, "ndvi_histogram.png")
     ndre_histogram_path = os.path.join(args.output_dir, "ndre_histogram.png")
     class_distribution_path = os.path.join(args.output_dir, "class_distribution.png")
+    class_distribution_pie_path = os.path.join(args.output_dir, "class_distribution_pie.png")
     scatter_path = os.path.join(args.output_dir, "ndvi_ndre_scatter.png")
     confidence_path = os.path.join(args.output_dir, "confidence_map.png")
     summary_csv_path = os.path.join(args.output_dir, "dataset_summary.csv")
@@ -454,6 +488,7 @@ def process(args: argparse.Namespace) -> None:
     save_histogram(ndvi, ndvi_histogram_path, "NDVI Histogram")
     save_histogram(ndre, ndre_histogram_path, "NDRE Histogram")
     save_class_distribution(label_map, class_distribution_path)
+    save_class_distribution_pie(label_map, class_distribution_pie_path)
     save_scatter(ndvi, ndre, scatter_path)
 
     classes = class_summary(label_map)

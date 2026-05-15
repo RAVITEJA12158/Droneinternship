@@ -94,6 +94,7 @@ export interface LabellingVisualizations {
   ndviHistogramUrl?: string | null
   ndreHistogramUrl?: string | null
   classDistributionUrl?: string | null
+  classDistributionPieUrl?: string | null
   ndviNdreScatterUrl?: string | null
 }
 

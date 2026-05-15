@@ -45,6 +45,7 @@ const layerLabels = {
   ndviHistogram: 'NDVI Hist',
   ndreHistogram: 'NDRE Hist',
   classDistribution: 'Classes',
+  classPie: 'Class Pie',
   scatter: 'NDVI/NDRE',
 }
 
@@ -167,6 +168,7 @@ export function LabellingPanel({ missionId, orthomosaics }: Props) {
     ndviHistogram: job?.stats?.visualizations?.ndviHistogramUrl,
     ndreHistogram: job?.stats?.visualizations?.ndreHistogramUrl,
     classDistribution: job?.stats?.visualizations?.classDistributionUrl,
+    classPie: job?.stats?.visualizations?.classDistributionPieUrl,
     scatter: job?.stats?.visualizations?.ndviNdreScatterUrl,
   }
   const activeUrl =
