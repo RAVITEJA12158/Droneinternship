@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { Activity, BarChart3, BrainCircuit, Image as ImageIcon, Layers, Play, RefreshCw } from 'lucide-react'
-import { useLabelling, useStartLabelling } from '@/hooks/useLabelling'
+import { Activity, BarChart3, BrainCircuit, Image as ImageIcon, Layers, Play, RefreshCw, Square } from 'lucide-react'
+import { useLabelling, useStartLabelling, useStopLabelling } from '@/hooks/useLabelling'
 import { Orthomosaic } from '@/types'
 import { orthomosaicsApi } from '@/lib/api/orthomosaics'
 import { Button } from '@/components/ui/Button'
@@ -42,9 +42,25 @@ function formatMethod(value?: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+function getProcessingProgress(job: { stats?: { message?: string; progress?: number } | null; status: string }) {
+  if (typeof job.stats?.progress === 'number' && Number.isFinite(job.stats.progress)) {
+    return Math.max(0, Math.min(100, Math.round(job.stats.progress)))
+  }
+
+  const stepMatch = job.stats?.message?.match(/\b(\d+)\s*\/\s*(\d+)\b/)
+  if (stepMatch) {
+    const current = Number(stepMatch[1])
+    const total = Number(stepMatch[2])
+    if (total > 0) return Math.max(0, Math.min(99, Math.round((current / total) * 100)))
+  }
+
+  return job.status === 'PROCESSING' ? 5 : 0
+}
+
 export function LabellingPanel({ missionId, orthomosaics }: Props) {
   const { data: job, isLoading, isError } = useLabelling(missionId)
   const startLabelling = useStartLabelling(missionId)
+  const stopLabelling = useStopLabelling(missionId)
   const [activeLayer, setActiveLayer] = useState<LayerKey>('labels')
 
   const rgbOrthomosaic = orthomosaics.find(o => o.type === 'RGB')
@@ -96,7 +112,7 @@ export function LabellingPanel({ missionId, orthomosaics }: Props) {
         description="Upload both RGB and multispectral orthomosaics, then run the workflow. The multispectral orthomosaic is used to generate NDVI, NDRE, and crop labels."
         action={
           <Button loading={startLabelling.isPending} onClick={() => startLabelling.mutate()}>
-            <Play size={16} />Start Labelling
+            <Play size={16} />{startLabelling.isPending ? 'Starting...' : 'Start Labelling'}
           </Button>
         }
       />
@@ -104,25 +120,50 @@ export function LabellingPanel({ missionId, orthomosaics }: Props) {
   }
 
   if (isProcessing) {
+    const liveMessage = job.stats?.message || (job.status === 'PENDING' ? 'Waiting to start...' : 'Starting process...')
+    const progress = getProcessingProgress(job)
+
     return (
       <div className="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-cyan-50 text-cyan-700">
           <RefreshCw size={30} className="animate-spin" />
         </div>
         <h3 className="text-lg font-semibold text-slate-950">Analyzing crop health...</h3>
-        <p className="mt-2 text-sm text-slate-500">Status: {job.status}. The dashboard will update when NDVI, NDRE, and label maps are ready.</p>
+        <div className="mx-auto mt-5 max-w-md text-left">
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span className="font-medium text-slate-700">{liveMessage}</span>
+            <span className="font-semibold text-cyan-700">{progress}%</span>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-cyan-600 transition-all duration-500" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+        <p className="mt-2 text-sm text-slate-500">Status: {job.status}. The dashboard will update automatically.</p>
+        <div className="mt-5 flex justify-center">
+          <Button variant="danger" loading={stopLabelling.isPending} onClick={() => stopLabelling.mutate()}>
+            <Square size={15} />Stop Processing
+          </Button>
+        </div>
       </div>
     )
   }
 
   if (job.status === 'FAILED') {
+    const wasStopped = Boolean(job.stats?.stopped)
     return (
-      <div className="bg-white border border-red-200 rounded-xl p-8 shadow-sm">
-        <h3 className="text-lg font-semibold text-red-700">Labelling failed</h3>
-        <p className="mt-2 text-sm text-slate-600">{job.stats?.error || 'The Python labelling job failed.'}</p>
-        <Button className="mt-5" loading={startLabelling.isPending} onClick={() => startLabelling.mutate()}>
-          <RefreshCw size={16} />Run Again
-        </Button>
+      <div className={`bg-white rounded-xl p-8 shadow-sm ${wasStopped ? 'border border-amber-200' : 'border border-red-200'}`}>
+        <h3 className={`text-lg font-bold text-center ${wasStopped ? 'text-amber-700' : 'text-red-700'}`}>
+          {wasStopped ? 'Labelling stopped' : 'Labelling failed'}
+        </h3>
+        <div className={`mt-4 p-4 rounded-lg text-sm font-mono whitespace-pre-wrap overflow-x-auto max-h-64 ${wasStopped ? 'bg-amber-50 border border-amber-100 text-amber-900' : 'bg-red-50 border border-red-100 text-red-900'}`}>
+          {job.stats?.error || (wasStopped ? 'Processing was stopped before completion.' : 'The Python labelling job failed unexpectedly.')}
+        </div>
+        <div className="mt-5 flex justify-center">
+          <Button loading={startLabelling.isPending} onClick={() => startLabelling.mutate()}>
+            {startLabelling.isPending ? <RefreshCw size={16} /> : <Play size={16} />}
+            {startLabelling.isPending ? 'Starting...' : wasStopped ? 'Start Again' : 'Run Again'}
+          </Button>
+        </div>
       </div>
     )
   }

@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import { LabellingJobStatus, MapType, Prisma } from "@prisma/client";
@@ -14,6 +14,9 @@ const OUTPUT_FILES = {
   overlay: "labels_overlay.png",
   stats: "statistics.json",
 };
+
+const runningLabellingProcesses = new Map<string, ChildProcessWithoutNullStreams>();
+const stoppedLabellingJobs = new Set<string>();
 
 function labellingScriptPath() {
   return path.resolve(__dirname, "..", "..", "scripts", "labelling.py");
@@ -57,6 +60,36 @@ function serializeJob<T extends {
     ndviMapUrl: job.ndviMapUrl ? publicMapUrl(job.ndviMapUrl) : null,
     ndreMapUrl: job.ndreMapUrl ? publicMapUrl(job.ndreMapUrl) : null,
     stats: serializeStats(job.stats),
+  };
+}
+
+function progressFromMessage(message: string) {
+  if (/completed successfully/i.test(message)) return 100;
+
+  const segmentMatch = message.match(/Classifying superpixels:\s*processed\s+(\d+)\s*\/\s*(\d+)\s+segments/i);
+  if (segmentMatch) {
+    const processed = Number(segmentMatch[1]);
+    const totalSegments = Number(segmentMatch[2]);
+    if (Number.isFinite(processed) && Number.isFinite(totalSegments) && totalSegments > 0) {
+      const segmentRatio = Math.max(0, Math.min(1, processed / totalSegments));
+      return Math.round(83 + segmentRatio * 15);
+    }
+  }
+
+  const stepMatch = message.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+  if (!stepMatch) return undefined;
+
+  const current = Number(stepMatch[1]);
+  const total = Number(stepMatch[2]);
+  if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0) return undefined;
+
+  return Math.max(0, Math.min(99, Math.round((current / total) * 100)));
+}
+
+function stoppedStats() {
+  return {
+    error: "Labelling stopped by user",
+    stopped: true,
   };
 }
 
@@ -124,8 +157,43 @@ export async function startLabelling(missionId: string, userId: string) {
         },
       });
 
+  stoppedLabellingJobs.delete(job.id);
   void runLabellingJob(job.id, mission, ortho.relativePath);
   return serializeJob(job);
+}
+
+export async function stopLabelling(missionId: string, userId: string) {
+  await assertMissionAccess(missionId, userId);
+  const job = await prisma.labellingJob.findFirst({
+    where: { missionId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!job) {
+    const err = new Error("No labelling job found") as Error & { statusCode: number };
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (job.status !== LabellingJobStatus.PENDING && job.status !== LabellingJobStatus.PROCESSING) {
+    return serializeJob(job);
+  }
+
+  stoppedLabellingJobs.add(job.id);
+  const child = runningLabellingProcesses.get(job.id);
+  if (child && !child.killed) {
+    child.kill();
+  }
+
+  const stoppedJob = await prisma.labellingJob.update({
+    where: { id: job.id },
+    data: {
+      status: LabellingJobStatus.FAILED,
+      stats: stoppedStats(),
+    },
+  });
+
+  return serializeJob(stoppedJob);
 }
 
 async function runLabellingJob(
@@ -134,10 +202,21 @@ async function runLabellingJob(
   inputRelativePath: string
 ) {
   try {
+    if (stoppedLabellingJobs.has(jobId)) return;
+
+    console.info(`[Labelling Job ${jobId}] Started processing for mission ${mission.name}...`);
     await prisma.labellingJob.update({
       where: { id: jobId },
       data: { status: LabellingJobStatus.PROCESSING },
     });
+
+    if (stoppedLabellingJobs.has(jobId)) {
+      await prisma.labellingJob.update({
+        where: { id: jobId },
+        data: { status: LabellingJobStatus.FAILED, stats: stoppedStats() },
+      });
+      return;
+    }
 
     const missionDir = path.join(
       env.STORAGE_ROOT,
@@ -150,7 +229,31 @@ async function runLabellingJob(
     ensureDir(tempDir);
     ensureDir(outputDir);
 
-    await executeLabellingScript(toAbsolutePath(inputRelativePath), tempDir);
+    console.info(`[Labelling Job ${jobId}] In progress: Running Python analysis on ${inputRelativePath}. This may take a moment.`);
+    await executeLabellingScript(
+      jobId,
+      toAbsolutePath(inputRelativePath),
+      tempDir,
+      (message) => {
+        if (stoppedLabellingJobs.has(jobId)) return;
+        const progress = progressFromMessage(message);
+        if (progress == null && !/Starting multispectral/i.test(message)) return;
+        // Callback to update the running status directly into the database so the frontend can poll it
+        prisma.labellingJob.update({
+          where: { id: jobId },
+          data: { stats: progress == null ? { message } : { message, progress } }
+        }).catch(err => console.error("Could not update progress:", err));
+      }
+    );
+    console.info(`[Labelling Job ${jobId}] Python script completed successfully. Copying output files...`);
+
+    if (stoppedLabellingJobs.has(jobId)) {
+      await prisma.labellingJob.update({
+        where: { id: jobId },
+        data: { status: LabellingJobStatus.FAILED, stats: stoppedStats() },
+      });
+      return;
+    }
 
     const outputRelative = {
       ndvi: toRelativePath(path.join(outputDir, OUTPUT_FILES.ndvi)),
@@ -187,27 +290,47 @@ async function runLabellingJob(
     });
 
     await fs.promises.rm(tempDir, { recursive: true, force: true });
+    console.info(`[Labelling Job ${jobId}] Success! Visualizations and stats have been saved for mission ${mission.name}.`);
   } catch (error) {
-    console.error("Labelling job failed:", error);
+    const wasStopped = stoppedLabellingJobs.has(jobId);
+    console.error(`[Labelling Job ${jobId}] Error failed during processing:`, error);
     await prisma.labellingJob.update({
       where: { id: jobId },
       data: {
         status: LabellingJobStatus.FAILED,
-        stats: { error: error instanceof Error ? error.message : "Unknown labelling error" },
+        stats: wasStopped ? stoppedStats() : { error: error instanceof Error ? error.message : "Unknown labelling error" },
       },
     });
   }
 }
 
-function executeLabellingScript(inputTif: string, outputDir: string) {
+function executeLabellingScript(jobId: string, inputTif: string, outputDir: string, onProgress?: (msg: string) => void) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(env.PYTHON_BIN, [
+      "-u", // VERY IMPORTANT: Forces Python to unbuffer stdout so it prints live!
       labellingScriptPath(),
       "--input_tif",
       inputTif,
       "--output_dir",
       outputDir,
-    ], { stdio: ["ignore", "pipe", "pipe"] });
+    ]);
+    runningLabellingProcesses.set(jobId, child);
+
+    let stdout = "";
+    child.stdout.on("data", (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      // Pass through python print statements directly to node console
+      process.stdout.write(`[Python Script]: ${text}`);
+
+      if (onProgress) {
+        // Extract the last non-empty line to send as progress
+        const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
+        if (lines.length > 0) {
+          onProgress(lines[lines.length - 1]);
+        }
+      }
+    });
 
     let stderr = "";
     child.stderr.on("data", (chunk) => {
@@ -216,10 +339,12 @@ function executeLabellingScript(inputTif: string, outputDir: string) {
 
     child.on("error", reject);
     child.on("close", (code) => {
+      runningLabellingProcesses.delete(jobId);
       if (code === 0) {
         resolve();
         return;
       }
+      console.error(`[Python Error] exit code ${code}:\n${stderr}`);
       reject(new Error(stderr.trim() || `Labelling script exited with code ${code}`));
     });
   });

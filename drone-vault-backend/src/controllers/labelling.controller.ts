@@ -15,6 +15,12 @@ export async function start(req: Request, res: Response, next: NextFunction) {
   } catch (err) { next(err); }
 }
 
+export async function stop(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(202).json(await labellingService.stopLabelling(req.params.id, req.user!.id));
+  } catch (err) { next(err); }
+}
+
 export async function map(req: Request, res: Response, next: NextFunction) {
   try {
     const relativePath = String(req.query.path || "");

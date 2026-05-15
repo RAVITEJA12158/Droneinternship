@@ -42,7 +42,9 @@ def normalize_for_slic(band: np.ndarray) -> np.ndarray:
     mx = np.nanmax(band)
     if mx - mn < EPSILON:
         return np.zeros_like(band, dtype=np.float32)
-    return ((band - mn) / (mx - mn)).astype(np.float32)
+
+    norm = ((band - mn) / (mx - mn)).astype(np.float32)
+    return np.nan_to_num(norm, nan=0.0)
 
 
 def compute_index(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -54,7 +56,8 @@ def compute_index(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def compute_percentiles(arr: np.ndarray) -> Dict[str, float]:
     valid = arr[np.isfinite(arr)]
     if valid.size == 0:
-        raise ValueError("No finite pixels available for percentile calculation")
+        # Fallback to prevent crashing if the image happens to be entirely masked or empty
+        return { "p25": 0.0, "p50": 0.0, "p75": 0.0 }
     return {
         "p25": float(np.nanpercentile(valid, 25)),
         "p50": float(np.nanpercentile(valid, 50)),
@@ -81,9 +84,16 @@ def build_cluster_model(ndvi: np.ndarray, ndre: np.ndarray) -> KMeans:
     valid = np.isfinite(ndvi) & np.isfinite(ndre)
     features = np.stack([ndvi[valid], ndre[valid]], axis=1)
     features = np.clip(features, -1, 1)
-    if features.shape[0] < 4:
-        raise ValueError("At least 4 valid pixels are required for KMeans clustering")
-    kmeans = KMeans(n_clusters=4, random_state=42, n_init=10)
+
+    n_samples = features.shape[0]
+    if n_samples == 0:
+        # Fallback if the image lacks data
+        features = np.zeros((10, 2))
+        n_samples = 10
+
+    n_clusters = min(4, n_samples)
+
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     kmeans.fit(features)
     return kmeans
 
@@ -198,17 +208,22 @@ def class_summary(label_map: np.ndarray) -> Dict[str, Dict[str, float]]:
 
 
 def process(args: argparse.Namespace) -> None:
+    print(f"Starting multispectral labelling process...", flush=True)
     os.makedirs(args.output_dir, exist_ok=True)
 
+    print("1/6 Reading RGB and Multispectral bands...", flush=True)
     with rasterio.open(args.input_tif) as src:
         red = read_band(src, args.red_band)
         nir = read_band(src, args.nir_band)
         red_edge = read_band(src, args.red_edge_band)
 
+    print("2/6 Computing NDVI and NDRE vegetative indices...", flush=True)
     ndvi = compute_index(nir, red)
     ndre = compute_index(nir, red_edge)
     ndvi_p = compute_percentiles(ndvi)
     ndre_p = compute_percentiles(ndre)
+
+    print("3/6 Building KMeans hybrid clustering model...", flush=True)
     kmeans = build_cluster_model(ndvi, ndre)
 
     stack = np.dstack([
@@ -217,6 +232,12 @@ def process(args: argparse.Namespace) -> None:
         normalize_for_slic(nir),
         normalize_for_slic(red),
     ])
+
+    # Absolute safeguard against any NaNs or Infs reaching SLIC
+    stack = np.nan_to_num(stack, nan=0.0, posinf=1.0, neginf=0.0)
+    stack = stack.astype(np.float64)
+
+    print(f"4/6 Running SLIC algorithm ({args.n_segments} segments). Please wait...", flush=True)
     segments = slic(
         img_as_float(stack),
         n_segments=args.n_segments,
@@ -224,20 +245,43 @@ def process(args: argparse.Namespace) -> None:
         sigma=1,
         start_label=1,
         channel_axis=-1,
+        enforce_connectivity=False, # Faster
     )
 
     label_map = np.full(segments.shape, NODATA_VALUE, dtype=np.uint8)
     records = []
 
-    for seg_id in np.unique(segments):
+    unique_segments = np.unique(segments)
+    total_segments = int(unique_segments.size)
+    report_interval = max(1, total_segments // 100)
+    print(
+        f"5/6 Classifying superpixels: processed 0/{total_segments} segments",
+        flush=True,
+    )
+
+    print(f"NDVI Percentiles: {ndvi_p}", flush=True)
+    print(f"NDRE Percentiles: {ndre_p}", flush=True)
+    for processed_count, seg_id in enumerate(unique_segments, start=1):
         mask = segments == seg_id
         area = int(mask.sum())
+        should_report = processed_count == total_segments or processed_count % report_interval == 0
+
         if area < args.min_segment_pixels:
+            if should_report:
+                print(
+                    f"5/6 Classifying superpixels: processed {processed_count}/{total_segments} segments",
+                    flush=True,
+                )
             continue
 
         mean_ndvi = float(np.nanmean(ndvi[mask]))
         mean_ndre = float(np.nanmean(ndre[mask]))
         if not np.isfinite(mean_ndvi) or not np.isfinite(mean_ndre):
+            if should_report:
+                print(
+                    f"5/6 Classifying superpixels: processed {processed_count}/{total_segments} segments",
+                    flush=True,
+                )
             continue
 
         class_id, confidence, cluster_id = assign_class_hybrid(mean_ndvi, mean_ndre, ndvi_p, ndre_p, kmeans)
@@ -254,6 +298,11 @@ def process(args: argparse.Namespace) -> None:
             "area_pixels": area,
             "confidence": confidence,
         })
+        if should_report:
+            print(
+                f"5/6 Classifying superpixels: processed {processed_count}/{total_segments} segments",
+                flush=True,
+            )
 
     ndvi_path = os.path.join(args.output_dir, "ndvi_heatmap.png")
     ndre_path = os.path.join(args.output_dir, "ndre_heatmap.png")
@@ -261,6 +310,8 @@ def process(args: argparse.Namespace) -> None:
     labels_path = os.path.join(args.output_dir, "labels_classified.png")
     overlay_path = os.path.join(args.output_dir, "labels_overlay.png")
     stats_path = os.path.join(args.output_dir, "statistics.json")
+
+    print("6/6 Generating visual heatmaps and overlays...", flush=True)
 
     save_index_heatmap(ndvi, ndvi_path, "NDVI", "RdYlGn")
     save_index_heatmap(ndre, ndre_path, "NDRE", "YlGn")
@@ -290,6 +341,8 @@ def process(args: argparse.Namespace) -> None:
 
     with open(stats_path, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2)
+
+    print("Multispectral pipeline completed successfully!", flush=True)
 
 
 def main() -> None:

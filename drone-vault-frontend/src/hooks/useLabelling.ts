@@ -29,3 +29,18 @@ export function useStartLabelling(missionId: string) {
     },
   })
 }
+
+export function useStopLabelling(missionId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => labellingApi.stop(missionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['labelling', missionId] })
+      toast.success('Labelling stopped')
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Failed to stop labelling')
+    },
+  })
+}

@@ -46,6 +46,7 @@ router.get("/missions/:id/orthomosaics", orthoCtrl.list);
 // Labelling
 router.get("/missions/:id/labelling", labellingCtrl.getOne);
 router.post("/missions/:id/labelling/start", labellingCtrl.start);
+router.post("/missions/:id/labelling/stop", labellingCtrl.stop);
 router.get("/labelling/maps", labellingCtrl.map);
 
 // Exports

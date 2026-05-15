@@ -46,7 +46,7 @@ export default function UploadPage() {
       setUploadStatus(prev => ({ ...prev, [stepId]: { status: 'complete', progress: 100 } }))
       toast.success(
         stepId === 'orthomosaic-multispectral'
-          ? 'Multispectral orthomosaic uploaded. Labelling started.'
+          ? 'Multispectral orthomosaic uploaded. Start labelling from the Labelling tab.'
           : stepId === 'orthomosaic-rgb'
             ? 'RGB orthomosaic uploaded.'
           : `${currentStep.label} uploaded!`

@@ -41,4 +41,9 @@ export const labellingApi = {
     const res = await api.post(`/api/missions/${missionId}/labelling/start`)
     return normalize(res.data) as LabellingJob
   },
+
+  stop: async (missionId: string): Promise<LabellingJob> => {
+    const res = await api.post(`/api/missions/${missionId}/labelling/stop`)
+    return normalize(res.data) as LabellingJob
+  },
 }

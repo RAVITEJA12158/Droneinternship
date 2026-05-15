@@ -92,6 +92,9 @@ export interface LabellingVisualizations {
 }
 
 export interface LabellingStats {
+  message?: string
+  progress?: number
+  stopped?: boolean
   labeling_method?: string
   parameters?: Record<string, number>
   ndvi?: Record<string, number>
