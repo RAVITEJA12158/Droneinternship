@@ -11,6 +11,16 @@ function withApiBase(url?: string | null) {
 
 function normalize(job: LabellingJob | null): LabellingJob | null {
   if (!job) return null
+  const withApiBaseMap = <T extends object>(map?: T | null): T | undefined => {
+    if (!map) return undefined
+    return Object.fromEntries(
+      Object.entries(map).map(([key, value]) => [
+        key,
+        typeof value === 'string' ? withApiBase(value) : value,
+      ])
+    ) as T
+  }
+
   return {
     ...job,
     labelMapUrl: withApiBase(job.labelMapUrl),
@@ -19,13 +29,8 @@ function normalize(job: LabellingJob | null): LabellingJob | null {
     stats: job.stats
       ? {
           ...job.stats,
-          visualizations: job.stats.visualizations
-            ? {
-                ...job.stats.visualizations,
-                superpixelsMapUrl: withApiBase(job.stats.visualizations.superpixelsMapUrl),
-                overlayMapUrl: withApiBase(job.stats.visualizations.overlayMapUrl),
-              }
-            : job.stats.visualizations,
+          visualizations: withApiBaseMap(job.stats.visualizations),
+          artifacts: withApiBaseMap(job.stats.artifacts),
         }
       : job.stats,
   }

@@ -7,11 +7,22 @@ import { ensureDir, sanitizeName, toAbsolutePath, toRelativePath } from "../conf
 import prisma from "../prisma";
 
 const OUTPUT_FILES = {
+  ndviTif: "ndvi.tif",
+  ndreTif: "ndre.tif",
+  labelsTif: "labels_pixelwise.tif",
+  superpixelsTif: "superpixels.tif",
+  composite: "source_composite.png",
   ndvi: "ndvi_heatmap.png",
   ndre: "ndre_heatmap.png",
-  superpixels: "superpixels.png",
+  superpixels: "superpixels_overlay.png",
   labels: "labels_classified.png",
   overlay: "labels_overlay.png",
+  ndviHistogram: "ndvi_histogram.png",
+  ndreHistogram: "ndre_histogram.png",
+  classDistribution: "class_distribution.png",
+  scatter: "ndvi_ndre_scatter.png",
+  confidence: "confidence_map.png",
+  summaryCsv: "dataset_summary.csv",
   stats: "statistics.json",
 };
 
@@ -29,21 +40,20 @@ function publicMapUrl(relativePath: string) {
 function serializeStats(stats: unknown) {
   if (!stats || typeof stats !== "object" || Array.isArray(stats)) return stats;
   const raw = stats as Record<string, unknown>;
-  const visualizations = raw.visualizations;
-  if (!visualizations || typeof visualizations !== "object" || Array.isArray(visualizations)) {
-    return raw;
-  }
-
-  const serializedVisualizations = Object.fromEntries(
-    Object.entries(visualizations as Record<string, unknown>).map(([key, value]) => [
-      key,
-      typeof value === "string" ? publicMapUrl(value) : value,
-    ])
-  );
+  const serializePathMap = (value: unknown) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        typeof item === "string" ? publicMapUrl(item) : item,
+      ])
+    );
+  };
 
   return {
     ...raw,
-    visualizations: serializedVisualizations,
+    visualizations: serializePathMap(raw.visualizations),
+    artifacts: serializePathMap(raw.artifacts),
   };
 }
 
@@ -255,26 +265,39 @@ async function runLabellingJob(
       return;
     }
 
-    const outputRelative = {
-      ndvi: toRelativePath(path.join(outputDir, OUTPUT_FILES.ndvi)),
-      ndre: toRelativePath(path.join(outputDir, OUTPUT_FILES.ndre)),
-      superpixels: toRelativePath(path.join(outputDir, OUTPUT_FILES.superpixels)),
-      labels: toRelativePath(path.join(outputDir, OUTPUT_FILES.labels)),
-      overlay: toRelativePath(path.join(outputDir, OUTPUT_FILES.overlay)),
-    };
+    const outputRelative = Object.fromEntries(
+      Object.entries(OUTPUT_FILES).map(([key, filename]) => [
+        key,
+        toRelativePath(path.join(outputDir, filename)),
+      ])
+    ) as Record<keyof typeof OUTPUT_FILES, string>;
 
-    await fs.promises.copyFile(path.join(tempDir, OUTPUT_FILES.ndvi), toAbsolutePath(outputRelative.ndvi));
-    await fs.promises.copyFile(path.join(tempDir, OUTPUT_FILES.ndre), toAbsolutePath(outputRelative.ndre));
-    await fs.promises.copyFile(path.join(tempDir, OUTPUT_FILES.superpixels), toAbsolutePath(outputRelative.superpixels));
-    await fs.promises.copyFile(path.join(tempDir, OUTPUT_FILES.labels), toAbsolutePath(outputRelative.labels));
-    await fs.promises.copyFile(path.join(tempDir, OUTPUT_FILES.overlay), toAbsolutePath(outputRelative.overlay));
+    await Promise.all(
+      Object.entries(OUTPUT_FILES).map(([key, filename]) =>
+        fs.promises.copyFile(path.join(tempDir, filename), toAbsolutePath(outputRelative[key as keyof typeof OUTPUT_FILES]))
+      )
+    );
 
     const statsRaw = await fs.promises.readFile(path.join(tempDir, OUTPUT_FILES.stats), "utf8");
     const stats = {
       ...JSON.parse(statsRaw),
       visualizations: {
+        sourceCompositeMapUrl: outputRelative.composite,
         superpixelsMapUrl: outputRelative.superpixels,
         overlayMapUrl: outputRelative.overlay,
+        confidenceMapUrl: outputRelative.confidence,
+        ndviHistogramUrl: outputRelative.ndviHistogram,
+        ndreHistogramUrl: outputRelative.ndreHistogram,
+        classDistributionUrl: outputRelative.classDistribution,
+        ndviNdreScatterUrl: outputRelative.scatter,
+      },
+      artifacts: {
+        ndviTifUrl: outputRelative.ndviTif,
+        ndreTifUrl: outputRelative.ndreTif,
+        labelsTifUrl: outputRelative.labelsTif,
+        superpixelsTifUrl: outputRelative.superpixelsTif,
+        statisticsJsonUrl: outputRelative.stats,
+        datasetSummaryCsvUrl: outputRelative.summaryCsv,
       },
     };
 

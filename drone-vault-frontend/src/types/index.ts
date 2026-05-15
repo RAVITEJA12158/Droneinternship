@@ -87,8 +87,23 @@ export interface LabellingSegmentStats {
 }
 
 export interface LabellingVisualizations {
+  sourceCompositeMapUrl?: string | null
   superpixelsMapUrl?: string | null
   overlayMapUrl?: string | null
+  confidenceMapUrl?: string | null
+  ndviHistogramUrl?: string | null
+  ndreHistogramUrl?: string | null
+  classDistributionUrl?: string | null
+  ndviNdreScatterUrl?: string | null
+}
+
+export interface LabellingArtifacts {
+  ndviTifUrl?: string | null
+  ndreTifUrl?: string | null
+  labelsTifUrl?: string | null
+  superpixelsTifUrl?: string | null
+  statisticsJsonUrl?: string | null
+  datasetSummaryCsvUrl?: string | null
 }
 
 export interface LabellingStats {
@@ -105,6 +120,7 @@ export interface LabellingStats {
   cluster_centers?: number[][]
   segments?: LabellingSegmentStats[]
   visualizations?: LabellingVisualizations
+  artifacts?: LabellingArtifacts
   error?: string
 }
 

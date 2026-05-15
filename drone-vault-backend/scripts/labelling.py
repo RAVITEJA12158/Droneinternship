@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import argparse
+import csv
 import json
 import os
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import matplotlib
 
@@ -11,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import BoundaryNorm, ListedColormap
 from skimage.segmentation import mark_boundaries, slic
 from skimage.util import img_as_float
 from sklearn.cluster import KMeans
@@ -53,6 +54,26 @@ def compute_index(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.clip(index, -1.0, 1.0)
 
 
+def stretch_channel(channel: np.ndarray, percentile: float = 99.0) -> np.ndarray:
+    channel = np.where(np.isfinite(channel), channel.astype(np.float32), np.nan)
+    if np.all(np.isnan(channel)):
+        return np.zeros_like(channel, dtype=np.float32)
+
+    high = np.nanpercentile(channel, percentile)
+    if not np.isfinite(high) or high <= EPSILON:
+        return np.zeros_like(channel, dtype=np.float32)
+
+    return np.nan_to_num(np.clip(channel / high, 0, 1), nan=0.0).astype(np.float32)
+
+
+def false_color_composite(red: np.ndarray, red_edge: np.ndarray, nir: np.ndarray) -> np.ndarray:
+    return np.dstack([
+        stretch_channel(nir),
+        stretch_channel(red),
+        stretch_channel(red_edge),
+    ])
+
+
 def compute_percentiles(arr: np.ndarray) -> Dict[str, float]:
     valid = arr[np.isfinite(arr)]
     if valid.size == 0:
@@ -78,6 +99,18 @@ def compute_stats(arr: np.ndarray) -> Dict[str, float]:
         "p50": float(np.nanpercentile(valid, 50)),
         "p75": float(np.nanpercentile(valid, 75)),
     }
+
+
+def save_geotiff(profile: dict, array: np.ndarray, path: str, dtype: str, nodata: Optional[float] = None) -> None:
+    out_profile = profile.copy()
+    out_profile.update(dtype=dtype, count=1, compress="lzw")
+    if nodata is not None:
+        out_profile.update(nodata=nodata)
+    else:
+        out_profile.pop("nodata", None)
+
+    with rasterio.open(path, "w", **out_profile) as dst:
+        dst.write(array.astype(dtype), 1)
 
 
 def build_cluster_model(ndvi: np.ndarray, ndre: np.ndarray) -> KMeans:
@@ -132,6 +165,68 @@ def save_index_heatmap(arr: np.ndarray, path: str, title: str, cmap: str) -> Non
     plt.close()
 
 
+def save_histogram(arr: np.ndarray, path: str, title: str) -> None:
+    valid = arr[np.isfinite(arr)]
+    plt.figure(figsize=(10, 5))
+    plt.hist(valid, bins=100, color="#64748b")
+    plt.title(title)
+    plt.xlabel("Value")
+    plt.ylabel("Frequency")
+    plt.tight_layout()
+    plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.04)
+    plt.close()
+
+
+def save_class_distribution(label_map: np.ndarray, path: str) -> None:
+    labels = []
+    counts = []
+    colors = []
+    for class_id, (name, _color, hex_color) in CLASS_INFO.items():
+        labels.append(name)
+        counts.append(int(np.sum(label_map == class_id)))
+        colors.append(hex_color)
+
+    plt.figure(figsize=(10, 5))
+    plt.bar(labels, counts, color=colors)
+    plt.xticks(rotation=20, ha="right")
+    plt.ylabel("Pixels")
+    plt.title("Class Distribution")
+    plt.tight_layout()
+    plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.04)
+    plt.close()
+
+
+def save_scatter(ndvi: np.ndarray, ndre: np.ndarray, path: str) -> None:
+    valid = np.isfinite(ndvi) & np.isfinite(ndre)
+    ndvi_values = ndvi[valid]
+    ndre_values = ndre[valid]
+    max_points = 120000
+    if ndvi_values.size > max_points:
+        indices = np.linspace(0, ndvi_values.size - 1, max_points).astype(np.int64)
+        ndvi_values = ndvi_values[indices]
+        ndre_values = ndre_values[indices]
+
+    plt.figure(figsize=(7, 7))
+    plt.scatter(ndvi_values, ndre_values, s=1, alpha=0.25, color="#0891b2")
+    plt.xlabel("NDVI")
+    plt.ylabel("NDRE")
+    plt.title("NDVI vs NDRE")
+    plt.tight_layout()
+    plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.04)
+    plt.close()
+
+
+def save_source_composite(red: np.ndarray, red_edge: np.ndarray, nir: np.ndarray, path: str) -> None:
+    composite = false_color_composite(red, red_edge, nir)
+    plt.figure(figsize=(10, 10))
+    plt.imshow(composite)
+    plt.title("Multispectral False-Color Composite")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
+    plt.close()
+
+
 def save_label_map(label_map: np.ndarray, path: str) -> None:
     display = np.ma.array(label_map, mask=(label_map == NODATA_VALUE))
     classes = sorted(v for v in np.unique(label_map) if int(v) in CLASS_INFO)
@@ -139,9 +234,12 @@ def save_label_map(label_map: np.ndarray, path: str) -> None:
         classes = list(CLASS_INFO.keys())
     colors = [CLASS_INFO[int(v)][1] for v in classes]
     cmap = ListedColormap(colors)
+    cmap.set_bad((0.85, 0.85, 0.85, 1.0))
+    bounds = [int(v) - 0.5 for v in classes] + [int(classes[-1]) + 0.5]
+    norm = BoundaryNorm(bounds, cmap.N)
 
     plt.figure(figsize=(10, 10))
-    plt.imshow(display, cmap=cmap, vmin=min(classes), vmax=max(classes))
+    plt.imshow(display, cmap=cmap, norm=norm, interpolation="nearest")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
@@ -160,23 +258,24 @@ def save_superpixel_map(ndvi: np.ndarray, segments: np.ndarray, path: str) -> No
     plt.close()
 
 
-def save_label_overlay(red: np.ndarray, red_edge: np.ndarray, nir: np.ndarray, label_map: np.ndarray, path: str) -> None:
-    base = np.dstack([
-        normalize_for_slic(nir),
-        normalize_for_slic(red),
-        normalize_for_slic(red_edge),
-    ])
-    overlay = base.copy()
-    for class_id, (_name, color, _hex) in CLASS_INFO.items():
-        mask = label_map == class_id
-        if np.any(mask):
-            overlay[mask] = 0.55 * base[mask] + 0.45 * np.array(color, dtype=np.float32)
+def save_confidence_map(confidence_map: np.ndarray, path: str) -> None:
+    plt.figure(figsize=(10, 10))
+    plt.imshow(confidence_map, cmap="viridis", vmin=0, vmax=1)
+    plt.colorbar(label="Confidence", fraction=0.046, pad=0.04)
+    plt.title("Confidence Map")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
+    plt.close()
 
-    overlay[label_map == NODATA_VALUE] = base[label_map == NODATA_VALUE]
+
+def save_label_overlay(red: np.ndarray, red_edge: np.ndarray, nir: np.ndarray, label_map: np.ndarray, path: str) -> None:
+    base = false_color_composite(red, red_edge, nir)
+    overlay = mark_boundaries(base, label_map, color=(1, 1, 1), mode="thick")
 
     plt.figure(figsize=(10, 10))
     plt.imshow(np.clip(overlay, 0, 1))
-    plt.title("Label Overlay")
+    plt.title("Label Boundaries on Multispectral Composite")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
@@ -207,6 +306,20 @@ def class_summary(label_map: np.ndarray) -> Dict[str, Dict[str, float]]:
     return summary
 
 
+def save_dataset_summary(summary: Dict[str, Dict[str, float]], path: str) -> None:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["class", "pixels", "percentage"])
+        writer.writeheader()
+        for class_id, item in summary.items():
+            if int(class_id) == NODATA_VALUE:
+                continue
+            writer.writerow({
+                "class": item["name"],
+                "pixels": item["pixels"],
+                "percentage": item["percentage"],
+            })
+
+
 def process(args: argparse.Namespace) -> None:
     print(f"Starting multispectral labelling process...", flush=True)
     os.makedirs(args.output_dir, exist_ok=True)
@@ -216,6 +329,7 @@ def process(args: argparse.Namespace) -> None:
         red = read_band(src, args.red_band)
         nir = read_band(src, args.nir_band)
         red_edge = read_band(src, args.red_edge_band)
+        profile = src.profile.copy()
 
     print("2/6 Computing NDVI and NDRE vegetative indices...", flush=True)
     ndvi = compute_index(nir, red)
@@ -249,6 +363,7 @@ def process(args: argparse.Namespace) -> None:
     )
 
     label_map = np.full(segments.shape, NODATA_VALUE, dtype=np.uint8)
+    confidence_map = np.zeros(segments.shape, dtype=np.float32)
     records = []
 
     unique_segments = np.unique(segments)
@@ -289,6 +404,7 @@ def process(args: argparse.Namespace) -> None:
             class_id = NODATA_VALUE
 
         label_map[mask] = class_id
+        confidence_map[mask] = confidence
         records.append({
             "segment_id": int(seg_id),
             "class_id": int(class_id),
@@ -304,20 +420,44 @@ def process(args: argparse.Namespace) -> None:
                 flush=True,
             )
 
+    ndvi_tif_path = os.path.join(args.output_dir, "ndvi.tif")
+    ndre_tif_path = os.path.join(args.output_dir, "ndre.tif")
+    labels_tif_path = os.path.join(args.output_dir, "labels_pixelwise.tif")
+    superpixels_tif_path = os.path.join(args.output_dir, "superpixels.tif")
     ndvi_path = os.path.join(args.output_dir, "ndvi_heatmap.png")
     ndre_path = os.path.join(args.output_dir, "ndre_heatmap.png")
-    superpixels_path = os.path.join(args.output_dir, "superpixels.png")
+    composite_path = os.path.join(args.output_dir, "source_composite.png")
+    superpixels_path = os.path.join(args.output_dir, "superpixels_overlay.png")
     labels_path = os.path.join(args.output_dir, "labels_classified.png")
     overlay_path = os.path.join(args.output_dir, "labels_overlay.png")
+    ndvi_histogram_path = os.path.join(args.output_dir, "ndvi_histogram.png")
+    ndre_histogram_path = os.path.join(args.output_dir, "ndre_histogram.png")
+    class_distribution_path = os.path.join(args.output_dir, "class_distribution.png")
+    scatter_path = os.path.join(args.output_dir, "ndvi_ndre_scatter.png")
+    confidence_path = os.path.join(args.output_dir, "confidence_map.png")
+    summary_csv_path = os.path.join(args.output_dir, "dataset_summary.csv")
     stats_path = os.path.join(args.output_dir, "statistics.json")
 
     print("6/6 Generating visual heatmaps and overlays...", flush=True)
 
+    save_geotiff(profile, ndvi, ndvi_tif_path, "float32")
+    save_geotiff(profile, ndre, ndre_tif_path, "float32")
+    save_geotiff(profile, label_map, labels_tif_path, "uint8", nodata=NODATA_VALUE)
+    save_geotiff(profile, segments, superpixels_tif_path, "uint32")
+    save_source_composite(red, red_edge, nir, composite_path)
     save_index_heatmap(ndvi, ndvi_path, "NDVI", "RdYlGn")
     save_index_heatmap(ndre, ndre_path, "NDRE", "YlGn")
     save_superpixel_map(ndvi, segments, superpixels_path)
     save_label_map(label_map, labels_path)
     save_label_overlay(red, red_edge, nir, label_map, overlay_path)
+    save_confidence_map(confidence_map, confidence_path)
+    save_histogram(ndvi, ndvi_histogram_path, "NDVI Histogram")
+    save_histogram(ndre, ndre_histogram_path, "NDRE Histogram")
+    save_class_distribution(label_map, class_distribution_path)
+    save_scatter(ndvi, ndre, scatter_path)
+
+    classes = class_summary(label_map)
+    save_dataset_summary(classes, summary_csv_path)
 
     stats = {
         "labeling_method": "slic_percentile_kmeans_distance_confidence",
@@ -334,7 +474,7 @@ def process(args: argparse.Namespace) -> None:
         "ndre": compute_stats(ndre),
         "ndvi_percentiles": ndvi_p,
         "ndre_percentiles": ndre_p,
-        "classes": class_summary(label_map),
+        "classes": classes,
         "cluster_centers": kmeans.cluster_centers_.tolist(),
         "segments": records,
     }
@@ -353,7 +493,7 @@ def main() -> None:
     parser.add_argument("--red_edge_band", type=int, default=2)
     parser.add_argument("--nir_band", type=int, default=3)
     parser.add_argument("--n_segments", type=int, default=15000)
-    parser.add_argument("--compactness", type=float, default=15)
+    parser.add_argument("--compactness", type=float, default=10)
     parser.add_argument("--min_segment_pixels", type=int, default=500)
     parser.add_argument("--confidence_threshold", type=float, default=0.55)
     process(parser.parse_args())
