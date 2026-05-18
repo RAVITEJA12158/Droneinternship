@@ -91,6 +91,8 @@ export interface LabellingVisualizations {
   superpixelsMapUrl?: string | null
   overlayMapUrl?: string | null
   confidenceMapUrl?: string | null
+  diseasePredictionMapUrl?: string | null
+  diseasePredictionConfidenceMapUrl?: string | null
   ndviHistogramUrl?: string | null
   ndreHistogramUrl?: string | null
   classDistributionUrl?: string | null
@@ -103,8 +105,31 @@ export interface LabellingArtifacts {
   ndreTifUrl?: string | null
   labelsTifUrl?: string | null
   superpixelsTifUrl?: string | null
+  diseasePredictionTifUrl?: string | null
+  diseasePredictionStatsJsonUrl?: string | null
   statisticsJsonUrl?: string | null
   datasetSummaryCsvUrl?: string | null
+}
+
+export interface DiseasePredictionStats {
+  enabled?: boolean
+  status?: string
+  error?: string
+  model_name?: string
+  checkpoint_name?: string
+  device?: string
+  patch_size?: number
+  stride?: number
+  batch_size?: number
+  target_multispectral_bands?: number
+  input_channels?: number
+  num_tiles?: number
+  prediction_threshold?: number
+  average_confidence?: number
+  min_confidence?: number
+  max_confidence?: number
+  covered_pixels?: number
+  classes?: Record<string, LabellingClassStats>
 }
 
 export interface LabellingStats {
@@ -120,6 +145,7 @@ export interface LabellingStats {
   classes?: Record<string, LabellingClassStats>
   cluster_centers?: number[][]
   segments?: LabellingSegmentStats[]
+  diseasePrediction?: DiseasePredictionStats
   visualizations?: LabellingVisualizations
   artifacts?: LabellingArtifacts
   error?: string

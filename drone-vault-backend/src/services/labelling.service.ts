@@ -27,11 +27,22 @@ const OUTPUT_FILES = {
   stats: "statistics.json",
 };
 
+const DISEASE_OUTPUT_FILES = {
+  diseasePredictionTif: "disease_prediction.tif",
+  diseasePredictionMap: "disease_prediction.png",
+  diseasePredictionConfidenceMap: "disease_prediction_confidence.png",
+  diseasePredictionStats: "disease_prediction_statistics.json",
+};
+
 const runningLabellingProcesses = new Map<string, ChildProcessWithoutNullStreams>();
 const stoppedLabellingJobs = new Set<string>();
 
 function labellingScriptPath() {
   return path.resolve(__dirname, "..", "..", "scripts", "labelling.py");
+}
+
+function diseasePredictionScriptPath() {
+  return path.resolve(__dirname, "..", "..", "scripts", "disease_prediction.py");
 }
 
 function publicMapUrl(relativePath: string) {
@@ -87,6 +98,16 @@ function progressFromMessage(message: string) {
     }
   }
 
+  const diseaseMatch = message.match(/Disease prediction:\s*processed\s+(\d+)\s*\/\s*(\d+)\s+tiles/i);
+  if (diseaseMatch) {
+    const processed = Number(diseaseMatch[1]);
+    const totalTiles = Number(diseaseMatch[2]);
+    if (Number.isFinite(processed) && Number.isFinite(totalTiles) && totalTiles > 0) {
+      const tileRatio = Math.max(0, Math.min(1, processed / totalTiles));
+      return Math.round(90 + tileRatio * 9);
+    }
+  }
+
   const stepMatch = message.match(/\b(\d+)\s*\/\s*(\d+)\b/);
   if (!stepMatch) return undefined;
 
@@ -102,6 +123,15 @@ function stoppedStats() {
     error: "Labelling stopped by user",
     stopped: true,
   };
+}
+
+async function fileExists(targetPath: string) {
+  try {
+    await fs.promises.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function assertMissionAccess(missionId: string, userId: string) {
@@ -258,6 +288,64 @@ async function runLabellingJob(
     );
     console.info(`[Labelling Job ${jobId}] Python script completed successfully. Copying output files...`);
 
+    let diseasePrediction: Record<string, unknown> | null = null;
+    const configuredCheckpoint = env.DISEASE_MODEL_CHECKPOINT.trim();
+
+    if (!stoppedLabellingJobs.has(jobId)) {
+      if (!configuredCheckpoint) {
+        diseasePrediction = {
+          enabled: false,
+          status: "skipped",
+          error: "DISEASE_MODEL_CHECKPOINT is not configured",
+        };
+      } else {
+        const checkpointPath = path.resolve(configuredCheckpoint);
+        if (!(await fileExists(checkpointPath))) {
+          diseasePrediction = {
+            enabled: false,
+            status: "skipped",
+            error: `Checkpoint not found at ${checkpointPath}`,
+          };
+        } else {
+          try {
+            console.info(`[Labelling Job ${jobId}] Starting disease prediction stage using ${checkpointPath}...`);
+            await executeDiseasePredictionScript(
+              jobId,
+              toAbsolutePath(inputRelativePath),
+              path.join(tempDir, OUTPUT_FILES.ndviTif),
+              path.join(tempDir, OUTPUT_FILES.ndreTif),
+              checkpointPath,
+              tempDir,
+              (message) => {
+                if (stoppedLabellingJobs.has(jobId)) return;
+                const progress = progressFromMessage(message);
+                if (progress == null && !/disease prediction/i.test(message)) return;
+                prisma.labellingJob.update({
+                  where: { id: jobId },
+                  data: { stats: progress == null ? { message } : { message, progress } }
+                }).catch(err => console.error("Could not update progress:", err));
+              }
+            );
+
+            const diseaseStatsPath = path.join(tempDir, DISEASE_OUTPUT_FILES.diseasePredictionStats);
+            diseasePrediction = await fileExists(diseaseStatsPath)
+              ? JSON.parse(await fs.promises.readFile(diseaseStatsPath, "utf8"))
+              : {
+                  enabled: true,
+                  status: "completed",
+                };
+          } catch (error) {
+            console.error(`[Labelling Job ${jobId}] Disease prediction stage failed:`, error);
+            diseasePrediction = {
+              enabled: true,
+              status: "failed",
+              error: error instanceof Error ? error.message : "Unknown disease prediction error",
+            };
+          }
+        }
+      }
+    }
+
     if (stoppedLabellingJobs.has(jobId)) {
       await prisma.labellingJob.update({
         where: { id: jobId },
@@ -273,15 +361,36 @@ async function runLabellingJob(
       ])
     ) as Record<keyof typeof OUTPUT_FILES, string>;
 
+    const diseaseOutputRelative = Object.fromEntries(
+      Object.entries(DISEASE_OUTPUT_FILES).map(([key, filename]) => [
+        key,
+        toRelativePath(path.join(outputDir, filename)),
+      ])
+    ) as Record<keyof typeof DISEASE_OUTPUT_FILES, string>;
+
     await Promise.all(
       Object.entries(OUTPUT_FILES).map(([key, filename]) =>
         fs.promises.copyFile(path.join(tempDir, filename), toAbsolutePath(outputRelative[key as keyof typeof OUTPUT_FILES]))
       )
     );
 
+    const copiedDiseaseOutputs = new Set<string>();
+    await Promise.all(
+      Object.entries(DISEASE_OUTPUT_FILES).map(async ([key, filename]) => {
+        const sourcePath = path.join(tempDir, filename);
+        if (!(await fileExists(sourcePath))) return;
+        await fs.promises.copyFile(
+          sourcePath,
+          toAbsolutePath(diseaseOutputRelative[key as keyof typeof DISEASE_OUTPUT_FILES])
+        );
+        copiedDiseaseOutputs.add(key);
+      })
+    );
+
     const statsRaw = await fs.promises.readFile(path.join(tempDir, OUTPUT_FILES.stats), "utf8");
     const stats = {
       ...JSON.parse(statsRaw),
+      diseasePrediction,
       visualizations: {
         sourceCompositeMapUrl: outputRelative.composite,
         superpixelsMapUrl: outputRelative.superpixels,
@@ -292,6 +401,12 @@ async function runLabellingJob(
         classDistributionUrl: outputRelative.classDistribution,
         classDistributionPieUrl: outputRelative.classDistributionPie,
         ndviNdreScatterUrl: outputRelative.scatter,
+        ...(copiedDiseaseOutputs.has("diseasePredictionMap")
+          ? { diseasePredictionMapUrl: diseaseOutputRelative.diseasePredictionMap }
+          : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionConfidenceMap")
+          ? { diseasePredictionConfidenceMapUrl: diseaseOutputRelative.diseasePredictionConfidenceMap }
+          : {}),
       },
       artifacts: {
         ndviTifUrl: outputRelative.ndviTif,
@@ -300,6 +415,12 @@ async function runLabellingJob(
         superpixelsTifUrl: outputRelative.superpixelsTif,
         statisticsJsonUrl: outputRelative.stats,
         datasetSummaryCsvUrl: outputRelative.summaryCsv,
+        ...(copiedDiseaseOutputs.has("diseasePredictionTif")
+          ? { diseasePredictionTifUrl: diseaseOutputRelative.diseasePredictionTif }
+          : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionStats")
+          ? { diseasePredictionStatsJsonUrl: diseaseOutputRelative.diseasePredictionStats }
+          : {}),
       },
     };
 
@@ -330,15 +451,52 @@ async function runLabellingJob(
 }
 
 function executeLabellingScript(jobId: string, inputTif: string, outputDir: string, onProgress?: (msg: string) => void) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(env.PYTHON_BIN, [
-      "-u", // VERY IMPORTANT: Forces Python to unbuffer stdout so it prints live!
+  return executePythonScript(
+    jobId,
+    [
+      "-u",
       labellingScriptPath(),
       "--input_tif",
       inputTif,
       "--output_dir",
       outputDir,
-    ]);
+    ],
+    onProgress
+  );
+}
+
+function executeDiseasePredictionScript(
+  jobId: string,
+  inputTif: string,
+  ndviTif: string,
+  ndreTif: string,
+  checkpointPath: string,
+  outputDir: string,
+  onProgress?: (msg: string) => void
+) {
+  return executePythonScript(
+    jobId,
+    [
+      "-u",
+      diseasePredictionScriptPath(),
+      "--input_tif",
+      inputTif,
+      "--ndvi_tif",
+      ndviTif,
+      "--ndre_tif",
+      ndreTif,
+      "--checkpoint",
+      checkpointPath,
+      "--output_dir",
+      outputDir,
+    ],
+    onProgress
+  );
+}
+
+function executePythonScript(jobId: string, args: string[], onProgress?: (msg: string) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(env.PYTHON_BIN, args);
     runningLabellingProcesses.set(jobId, child);
 
     let stdout = "";
@@ -370,7 +528,7 @@ function executeLabellingScript(jobId: string, inputTif: string, outputDir: stri
         return;
       }
       console.error(`[Python Error] exit code ${code}:\n${stderr}`);
-      reject(new Error(stderr.trim() || `Labelling script exited with code ${code}`));
+      reject(new Error(stderr.trim() || `Python script exited with code ${code}`));
     });
   });
 }

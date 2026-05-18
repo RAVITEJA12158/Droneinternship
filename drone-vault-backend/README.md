@@ -11,11 +11,13 @@ npx prisma migrate dev --name init
 npm run dev
 ```
 
+Set `DISEASE_MODEL_CHECKPOINT` in `.env` to enable the post-labelling disease prediction stage.
+
 ## Prerequisites
 
 - Node.js 20+
 - PostgreSQL 15
-- Python 3.10+ with `rasterio`, `numpy`, `matplotlib`, `scikit-image`, and `scikit-learn` for multispectral labelling
+- Python 3.10+ with `rasterio`, `numpy`, `matplotlib`, `scikit-image`, `scikit-learn`, `torch`, and `timm` for multispectral labelling and disease prediction
 
 ## API Base URL
 
