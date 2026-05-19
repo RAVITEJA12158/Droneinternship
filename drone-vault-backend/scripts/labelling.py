@@ -29,6 +29,10 @@ NODATA_VALUE = 255
 EPSILON = 1e-6
 
 
+def log_step(stage: str, message: str) -> None:
+    print(f"[labelling] {stage} | {message}", flush=True)
+
+
 def read_band(src: rasterio.io.DatasetReader, index: int) -> np.ndarray:
     if src.count < index:
         raise ValueError(f"Input TIF has {src.count} bands, but band {index} is required")
@@ -354,23 +358,23 @@ def save_dataset_summary(summary: Dict[str, Dict[str, float]], path: str) -> Non
 
 
 def process(args: argparse.Namespace) -> None:
-    print(f"Starting multispectral labelling process...", flush=True)
+    log_step("start", f"Starting multispectral labelling for {os.path.basename(args.input_tif)}")
     os.makedirs(args.output_dir, exist_ok=True)
 
-    print("1/6 Reading RGB and Multispectral bands...", flush=True)
+    log_step("1/6", f"Reading red band {args.red_band}, red-edge band {args.red_edge_band}, and NIR band {args.nir_band}")
     with rasterio.open(args.input_tif) as src:
         red = read_band(src, args.red_band)
         nir = read_band(src, args.nir_band)
         red_edge = read_band(src, args.red_edge_band)
         profile = src.profile.copy()
 
-    print("2/6 Computing NDVI and NDRE vegetative indices...", flush=True)
+    log_step("2/6", "Computing NDVI and NDRE vegetation index rasters")
     ndvi = compute_index(nir, red)
     ndre = compute_index(nir, red_edge)
     ndvi_p = compute_percentiles(ndvi)
     ndre_p = compute_percentiles(ndre)
 
-    print("3/6 Building KMeans hybrid clustering model...", flush=True)
+    log_step("3/6", "Fitting image-specific KMeans clusters from NDVI and NDRE values")
     kmeans = build_cluster_model(ndvi, ndre)
 
     stack = np.dstack([
@@ -384,7 +388,7 @@ def process(args: argparse.Namespace) -> None:
     stack = np.nan_to_num(stack, nan=0.0, posinf=1.0, neginf=0.0)
     stack = stack.astype(np.float64)
 
-    print(f"4/6 Running SLIC algorithm ({args.n_segments} segments). Please wait...", flush=True)
+    log_step("4/6", f"Segmenting the orthomosaic into about {args.n_segments} SLIC superpixels")
     segments = slic(
         img_as_float(stack),
         n_segments=args.n_segments,
@@ -402,13 +406,9 @@ def process(args: argparse.Namespace) -> None:
     unique_segments = np.unique(segments)
     total_segments = int(unique_segments.size)
     report_interval = max(1, total_segments // 100)
-    print(
-        f"5/6 Classifying superpixels: processed 0/{total_segments} segments",
-        flush=True,
-    )
-
-    print(f"NDVI Percentiles: {ndvi_p}", flush=True)
-    print(f"NDRE Percentiles: {ndre_p}", flush=True)
+    log_step("5/6", f"Classifying superpixels: processed 0/{total_segments} segments")
+    log_step("indices", f"NDVI percentiles: {ndvi_p}")
+    log_step("indices", f"NDRE percentiles: {ndre_p}")
     for processed_count, seg_id in enumerate(unique_segments, start=1):
         mask = segments == seg_id
         area = int(mask.sum())
@@ -416,20 +416,14 @@ def process(args: argparse.Namespace) -> None:
 
         if area < args.min_segment_pixels:
             if should_report:
-                print(
-                    f"5/6 Classifying superpixels: processed {processed_count}/{total_segments} segments",
-                    flush=True,
-                )
+                log_step("5/6", f"Classifying superpixels: processed {processed_count}/{total_segments} segments")
             continue
 
         mean_ndvi = float(np.nanmean(ndvi[mask]))
         mean_ndre = float(np.nanmean(ndre[mask]))
         if not np.isfinite(mean_ndvi) or not np.isfinite(mean_ndre):
             if should_report:
-                print(
-                    f"5/6 Classifying superpixels: processed {processed_count}/{total_segments} segments",
-                    flush=True,
-                )
+                log_step("5/6", f"Classifying superpixels: processed {processed_count}/{total_segments} segments")
             continue
 
         class_id, confidence, cluster_id = assign_class_hybrid(mean_ndvi, mean_ndre, ndvi_p, ndre_p, kmeans)
@@ -448,10 +442,7 @@ def process(args: argparse.Namespace) -> None:
             "confidence": confidence,
         })
         if should_report:
-            print(
-                f"5/6 Classifying superpixels: processed {processed_count}/{total_segments} segments",
-                flush=True,
-            )
+            log_step("5/6", f"Classifying superpixels: processed {processed_count}/{total_segments} segments")
 
     ndvi_tif_path = os.path.join(args.output_dir, "ndvi.tif")
     ndre_tif_path = os.path.join(args.output_dir, "ndre.tif")
@@ -472,7 +463,7 @@ def process(args: argparse.Namespace) -> None:
     summary_csv_path = os.path.join(args.output_dir, "dataset_summary.csv")
     stats_path = os.path.join(args.output_dir, "statistics.json")
 
-    print("6/6 Generating visual heatmaps and overlays...", flush=True)
+    log_step("6/6", f"Writing GeoTIFFs, charts, overlays, and statistics to {args.output_dir}")
 
     save_geotiff(profile, ndvi, ndvi_tif_path, "float32")
     save_geotiff(profile, ndre, ndre_tif_path, "float32")
@@ -517,7 +508,7 @@ def process(args: argparse.Namespace) -> None:
     with open(stats_path, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2)
 
-    print("Multispectral pipeline completed successfully!", flush=True)
+    log_step("done", "Multispectral labelling completed successfully")
 
 
 def main() -> None:

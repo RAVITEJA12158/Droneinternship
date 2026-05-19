@@ -47,8 +47,8 @@ const worker = new Worker(
 );
 
 worker.on("failed", (job, err) => {
-  console.error(`Thumbnail job ${job?.id} failed:`, err.message);
+  console.error(`[worker:thumbnail] Job ${job?.id ?? "unknown"} failed: ${err.message}`);
 });
 
-console.log("Thumbnail worker started");
+console.info("[worker:thumbnail] Worker started and waiting for thumbnail jobs.");
 export default worker;

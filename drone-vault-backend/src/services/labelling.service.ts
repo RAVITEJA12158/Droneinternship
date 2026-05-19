@@ -37,6 +37,14 @@ const DISEASE_OUTPUT_FILES = {
 const runningLabellingProcesses = new Map<string, ChildProcessWithoutNullStreams>();
 const stoppedLabellingJobs = new Set<string>();
 
+function logLabellingJob(jobId: string, message: string) {
+  console.info(`[labelling:${jobId}] ${message}`);
+}
+
+function logLabellingJobError(jobId: string, message: string, error?: unknown) {
+  console.error(`[labelling:${jobId}] ${message}`, error ?? "");
+}
+
 function labellingScriptPath() {
   return path.resolve(__dirname, "..", "..", "scripts", "labelling.py");
 }
@@ -332,7 +340,7 @@ async function runLabellingJob(
   try {
     if (stoppedLabellingJobs.has(jobId)) return;
 
-    console.info(`[Labelling Job ${jobId}] Started processing for mission ${mission.name}...`);
+    logLabellingJob(jobId, `Queued analysis for mission "${mission.name}".`);
     await prisma.labellingJob.update({
       where: { id: jobId },
       data: { status: LabellingJobStatus.PROCESSING },
@@ -357,7 +365,7 @@ async function runLabellingJob(
     ensureDir(tempDir);
     ensureDir(outputDir);
 
-    console.info(`[Labelling Job ${jobId}] In progress: Running Python analysis on ${inputRelativePath}. This may take a moment.`);
+    logLabellingJob(jobId, `Starting multispectral labelling from ${inputRelativePath}.`);
     await executeLabellingScript(
       jobId,
       toAbsolutePath(inputRelativePath),
@@ -366,20 +374,20 @@ async function runLabellingJob(
         if (stoppedLabellingJobs.has(jobId)) return;
         const progress = progressFromMessage(message);
         if (progress == null && !/Starting multispectral/i.test(message)) return;
-        // Callback to update the running status directly into the database so the frontend can poll it
         prisma.labellingJob.update({
           where: { id: jobId },
           data: { stats: progress == null ? { message } : { message, progress } }
-        }).catch(err => console.error("Could not update progress:", err));
+        }).catch(err => logLabellingJobError(jobId, "Could not save labelling progress to the database.", err));
       }
     );
-    console.info(`[Labelling Job ${jobId}] Python script completed successfully. Copying output files...`);
+    logLabellingJob(jobId, "Labelling analysis finished. Preparing output files.");
 
     let diseasePrediction: Record<string, unknown> | null = null;
     const configuredCheckpoint = env.DISEASE_MODEL_CHECKPOINT.trim();
 
     if (!stoppedLabellingJobs.has(jobId)) {
       if (!configuredCheckpoint) {
+        logLabellingJob(jobId, "Disease prediction skipped because DISEASE_MODEL_CHECKPOINT is not configured.");
         diseasePrediction = {
           enabled: false,
           status: "skipped",
@@ -388,6 +396,7 @@ async function runLabellingJob(
       } else {
         const checkpointPath = path.resolve(configuredCheckpoint);
         if (!(await fileExists(checkpointPath))) {
+          logLabellingJob(jobId, `Disease prediction skipped because checkpoint was not found at ${checkpointPath}.`);
           diseasePrediction = {
             enabled: false,
             status: "skipped",
@@ -395,7 +404,7 @@ async function runLabellingJob(
           };
         } else {
           try {
-            console.info(`[Labelling Job ${jobId}] Starting disease prediction stage using ${checkpointPath}...`);
+            logLabellingJob(jobId, `Starting disease prediction with checkpoint ${checkpointPath}.`);
             await executeDiseasePredictionScript(
               jobId,
               toAbsolutePath(inputRelativePath),
@@ -410,7 +419,7 @@ async function runLabellingJob(
                 prisma.labellingJob.update({
                   where: { id: jobId },
                   data: { stats: progress == null ? { message } : { message, progress } }
-                }).catch(err => console.error("Could not update progress:", err));
+                }).catch(err => logLabellingJobError(jobId, "Could not save disease prediction progress to the database.", err));
               }
             );
 
@@ -422,7 +431,7 @@ async function runLabellingJob(
                   status: "completed",
                 };
           } catch (error) {
-            console.error(`[Labelling Job ${jobId}] Disease prediction stage failed:`, error);
+            logLabellingJobError(jobId, "Disease prediction failed; keeping labelling outputs available.", error);
             diseasePrediction = {
               enabled: true,
               status: "failed",
@@ -523,10 +532,10 @@ async function runLabellingJob(
     });
 
     await fs.promises.rm(tempDir, { recursive: true, force: true });
-    console.info(`[Labelling Job ${jobId}] Success! Visualizations and stats have been saved for mission ${mission.name}.`);
+    logLabellingJob(jobId, `Completed. Visualizations and statistics were saved for mission "${mission.name}".`);
   } catch (error) {
     const wasStopped = stoppedLabellingJobs.has(jobId);
-    console.error(`[Labelling Job ${jobId}] Error failed during processing:`, error);
+    logLabellingJobError(jobId, "Labelling job failed during processing.", error);
     await prisma.labellingJob.update({
       where: { id: jobId },
       data: {
@@ -586,19 +595,15 @@ function executePythonScript(jobId: string, args: string[], onProgress?: (msg: s
     const child = spawn(env.PYTHON_BIN, args);
     runningLabellingProcesses.set(jobId, child);
 
-    let stdout = "";
+    let stdoutBuffer = "";
     child.stdout.on("data", (chunk) => {
-      const text = chunk.toString();
-      stdout += text;
-      // Pass through python print statements directly to node console
-      process.stdout.write(`[Python Script]: ${text}`);
+      stdoutBuffer += chunk.toString();
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() ?? "";
 
-      if (onProgress) {
-        // Extract the last non-empty line to send as progress
-        const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
-        if (lines.length > 0) {
-          onProgress(lines[lines.length - 1]);
-        }
+      for (const line of lines.map((item) => item.trim()).filter(Boolean)) {
+        logLabellingJob(jobId, line);
+        onProgress?.(line);
       }
     });
 
@@ -610,11 +615,16 @@ function executePythonScript(jobId: string, args: string[], onProgress?: (msg: s
     child.on("error", reject);
     child.on("close", (code) => {
       runningLabellingProcesses.delete(jobId);
+      const finalLine = stdoutBuffer.trim();
+      if (finalLine) {
+        logLabellingJob(jobId, finalLine);
+        onProgress?.(finalLine);
+      }
       if (code === 0) {
         resolve();
         return;
       }
-      console.error(`[Python Error] exit code ${code}:\n${stderr}`);
+      logLabellingJobError(jobId, `Python script exited with code ${code}.`, stderr.trim());
       reject(new Error(stderr.trim() || `Python script exited with code ${code}`));
     });
   });

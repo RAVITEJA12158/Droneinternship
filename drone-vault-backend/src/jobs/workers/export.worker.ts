@@ -32,8 +32,8 @@ const worker = new Worker(
 );
 
 worker.on("failed", (job, err) => {
-  console.error(`Export job ${job?.id} failed:`, err.message);
+  console.error(`[worker:export] Job ${job?.id ?? "unknown"} failed: ${err.message}`);
 });
 
-console.log("Export worker started");
+console.info("[worker:export] Worker started and waiting for export jobs.");
 export default worker;

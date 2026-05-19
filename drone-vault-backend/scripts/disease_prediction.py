@@ -27,6 +27,10 @@ NODATA_VALUE = 255
 EPSILON = 1e-6
 
 
+def log_step(stage: str, message: str) -> None:
+    print(f"[disease-prediction] {stage} | {message}", flush=True)
+
+
 def read_raster(path: str) -> Tuple[np.ndarray, dict]:
     with rasterio.open(path) as src:
         arr = src.read().astype(np.float32)
@@ -171,7 +175,7 @@ def summarize_classes(prediction_map: np.ndarray) -> Dict[str, Dict[str, float]]
 
 
 def process(args: argparse.Namespace) -> None:
-    print("7/8 Loading disease prediction model...", flush=True)
+    log_step("7/8", f"Loading trained checkpoint from {args.checkpoint}")
     os.makedirs(args.output_dir, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -180,7 +184,7 @@ def process(args: argparse.Namespace) -> None:
     patch_size = int(checkpoint.get("patch_size", args.patch_size))
     stride = args.stride if args.stride and args.stride > 0 else patch_size
 
-    print("7/8 Reading orthomosaic and derived index rasters...", flush=True)
+    log_step("7/8", "Reading orthomosaic, NDVI, and NDRE rasters for model inference")
     multispectral, profile = read_raster(args.input_tif)
     ndvi, _ = read_raster(args.ndvi_tif)
     ndre, _ = read_raster(args.ndre_tif)
@@ -212,10 +216,7 @@ def process(args: argparse.Namespace) -> None:
     confidence_map = np.zeros((image.shape[1], image.shape[2]), dtype=np.float32)
     coverage_map = np.zeros((image.shape[1], image.shape[2]), dtype=np.uint16)
 
-    print(
-        f"7/8 Disease prediction: processed 0/{total_tiles} tiles",
-        flush=True,
-    )
+    log_step("7/8", f"Disease prediction: processed 0/{total_tiles} tiles")
 
     with torch.no_grad():
         for batch_start in range(0, total_tiles, args.batch_size):
@@ -239,10 +240,7 @@ def process(args: argparse.Namespace) -> None:
                 coverage_map[y:y + patch_size, x:x + patch_size] += 1
 
             processed = min(batch_start + len(batch_positions), total_tiles)
-            print(
-                f"7/8 Disease prediction: processed {processed}/{total_tiles} tiles",
-                flush=True,
-            )
+            log_step("7/8", f"Disease prediction: processed {processed}/{total_tiles} tiles")
 
     prediction_map = np.full(pred_encoded_map.shape, NODATA_VALUE, dtype=np.uint8)
     for encoded_id, original_id in inv_label_map.items():
@@ -261,7 +259,7 @@ def process(args: argparse.Namespace) -> None:
     confidence_png_path = os.path.join(args.output_dir, "disease_prediction_confidence.png")
     stats_path = os.path.join(args.output_dir, "disease_prediction_statistics.json")
 
-    print("8/8 Writing disease prediction outputs...", flush=True)
+    log_step("8/8", f"Writing prediction map, confidence map, and statistics to {args.output_dir}")
     save_geotiff(profile, prediction_map, prediction_tif_path, "uint8")
     save_prediction_map(prediction_map, prediction_png_path)
     save_confidence_map(confidence_map, confidence_png_path)
@@ -291,7 +289,7 @@ def process(args: argparse.Namespace) -> None:
     with open(stats_path, "w", encoding="utf-8") as handle:
         json.dump(stats, handle, indent=2)
 
-    print("Disease prediction completed successfully!", flush=True)
+    log_step("done", "Disease prediction completed successfully")
 
 
 def main() -> None:

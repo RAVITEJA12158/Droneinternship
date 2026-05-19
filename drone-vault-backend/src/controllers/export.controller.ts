@@ -47,7 +47,7 @@ export async function exportZip(req: Request, res: Response, next: NextFunction)
       } catch (err) {
         job.status = "failed";
         job.error = (err as Error).message;
-        console.error("ZIP export failed:", err);
+        console.error(`[export:${job.id}] ZIP export failed for mission ${mission.id}.`, err);
       }
     })();
   } catch (err) { next(err); }
@@ -67,7 +67,7 @@ export async function exportJson(req: Request, res: Response, next: NextFunction
       } catch (err) {
         job.status = "failed";
         job.error = (err as Error).message;
-        console.error("JSON export failed:", err);
+        console.error(`[export:${job.id}] JSON export failed for mission ${mission.id}.`, err);
       }
     })();
   } catch (err) { next(err); }

@@ -59,7 +59,7 @@ export function errorMiddleware(
       res.status(statusCode).json({ code: "CLIENT_ERROR", message: err.message });
       return;
     }
-    console.error("Unhandled error:", err);
+    console.error("[error] Unhandled server error while processing request.", err);
     res.status(500).json({
       code: "INTERNAL_ERROR",
       message: process.env.NODE_ENV === "development" ? err.message : "Internal server error",
