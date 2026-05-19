@@ -23,7 +23,7 @@ export const env = {
   STORAGE_ROOT: storageRoot,
   PYTHON_BIN: process.env.PYTHON_BIN || "python",
   DISEASE_MODEL_CHECKPOINT: process.env.DISEASE_MODEL_CHECKPOINT || "",
-  // BUG-16 fix: REDIS_URL removed — BullMQ/Redis workers were removed from this project
+  // REDIS_URL is intentionally not required by the HTTP API.
   PORT: parseInt(process.env.PORT || "4000", 10),
   NODE_ENV: process.env.NODE_ENV || "development",
 };

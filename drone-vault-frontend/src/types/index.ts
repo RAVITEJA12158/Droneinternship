@@ -93,6 +93,8 @@ export interface LabellingVisualizations {
   confidenceMapUrl?: string | null
   diseasePredictionMapUrl?: string | null
   diseasePredictionConfidenceMapUrl?: string | null
+  diseasePredictionNotebookMapUrl?: string | null
+  diseasePredictionGroundTruthMapUrl?: string | null
   ndviHistogramUrl?: string | null
   ndreHistogramUrl?: string | null
   classDistributionUrl?: string | null

@@ -7,30 +7,32 @@ import { ensureDir, sanitizeName, toAbsolutePath, toRelativePath } from "../conf
 import prisma from "../prisma";
 
 const OUTPUT_FILES = {
-  ndviTif: "ndvi.tif",
-  ndreTif: "ndre.tif",
-  labelsTif: "labels_pixelwise.tif",
-  superpixelsTif: "superpixels.tif",
-  composite: "source_composite.png",
-  ndvi: "ndvi_heatmap.png",
-  ndre: "ndre_heatmap.png",
-  superpixels: "superpixels_overlay.png",
-  labels: "labels_classified.png",
-  overlay: "labels_overlay.png",
-  ndviHistogram: "ndvi_histogram.png",
-  ndreHistogram: "ndre_histogram.png",
-  classDistribution: "class_distribution.png",
-  classDistributionPie: "class_distribution_pie.png",
-  scatter: "ndvi_ndre_scatter.png",
-  confidence: "confidence_map.png",
-  summaryCsv: "dataset_summary.csv",
-  stats: "statistics.json",
+  ndviTif: "labelling_ndvi.tif",
+  ndreTif: "labelling_ndre.tif",
+  labelsTif: "labelling_labels_pixelwise.tif",
+  superpixelsTif: "labelling_superpixels.tif",
+  composite: "labelling_source_composite.png",
+  ndvi: "labelling_ndvi_heatmap.png",
+  ndre: "labelling_ndre_heatmap.png",
+  superpixels: "labelling_superpixels_overlay.png",
+  labels: "labelling_labels_classified.png",
+  overlay: "labelling_labels_overlay.png",
+  ndviHistogram: "labelling_ndvi_histogram.png",
+  ndreHistogram: "labelling_ndre_histogram.png",
+  classDistribution: "labelling_class_distribution.png",
+  classDistributionPie: "labelling_class_distribution_pie.png",
+  scatter: "labelling_ndvi_ndre_scatter.png",
+  confidence: "labelling_confidence_map.png",
+  summaryCsv: "labelling_dataset_summary.csv",
+  stats: "labelling_statistics.json",
 };
 
 const DISEASE_OUTPUT_FILES = {
   diseasePredictionTif: "disease_prediction.tif",
   diseasePredictionMap: "disease_prediction.png",
   diseasePredictionConfidenceMap: "disease_prediction_confidence.png",
+  diseasePredictionNotebookMap: "predicted_map.png",
+  diseasePredictionGroundTruthMap: "ground_truth.png",
   diseasePredictionStats: "disease_prediction_statistics.json",
 };
 
@@ -77,89 +79,42 @@ function serializeStats(stats: unknown) {
   };
 }
 
-function averageSegmentConfidence(segments: unknown) {
-  if (!Array.isArray(segments)) return undefined;
-  let total = 0;
-  let count = 0;
-  for (const segment of segments) {
-    if (!segment || typeof segment !== "object") continue;
-    const confidence = (segment as Record<string, unknown>).confidence;
-    if (typeof confidence !== "number" || !Number.isFinite(confidence)) continue;
-    total += confidence;
-    count += 1;
-  }
-  return count ? total / count : undefined;
-}
-
-function coveredClassPixels(classes: unknown) {
-  if (!classes || typeof classes !== "object" || Array.isArray(classes)) return undefined;
-  let total = 0;
-  for (const item of Object.values(classes as Record<string, unknown>)) {
-    if (!item || typeof item !== "object") continue;
-    const classStats = item as Record<string, unknown>;
-    if (classStats.id === 255) continue;
-    if (typeof classStats.pixels === "number") total += classStats.pixels;
-  }
-  return total;
-}
-
-function withLabellingDiseaseFallback(
-  stats: unknown,
-  labelMapUrl?: string | null
-) {
+function withoutLabellingDiseaseFallback(stats: unknown) {
   if (!stats || typeof stats !== "object" || Array.isArray(stats)) return stats;
 
   const raw = stats as Record<string, unknown>;
-  if (!raw.classes) return raw;
-
   const visualizations =
     raw.visualizations && typeof raw.visualizations === "object" && !Array.isArray(raw.visualizations)
       ? raw.visualizations as Record<string, unknown>
-      : {};
-  const artifacts =
-    raw.artifacts && typeof raw.artifacts === "object" && !Array.isArray(raw.artifacts)
-      ? raw.artifacts as Record<string, unknown>
       : {};
   const diseasePrediction =
     raw.diseasePrediction && typeof raw.diseasePrediction === "object" && !Array.isArray(raw.diseasePrediction)
       ? raw.diseasePrediction as Record<string, unknown>
       : null;
 
-  if (diseasePrediction?.status === "completed" && visualizations.diseasePredictionMapUrl) {
+  if (
+    !diseasePrediction ||
+    (diseasePrediction.status === "completed" && diseasePrediction.source !== "labelling_fallback")
+  ) {
     return raw;
   }
-
-  const fallbackMapUrl = visualizations.diseasePredictionMapUrl || labelMapUrl;
-  if (!fallbackMapUrl) return raw;
-
-  const averageConfidence = averageSegmentConfidence(raw.segments);
-  const coveredPixels = coveredClassPixels(raw.classes);
 
   return {
     ...raw,
     diseasePrediction: {
-      enabled: false,
-      status: "completed",
-      source: "labelling_fallback",
-      model_name: "Labelling classifier",
-      checkpoint_name: "Not configured",
-      classes: raw.classes,
-      average_confidence: averageConfidence,
-      covered_pixels: coveredPixels,
-      num_tiles: Array.isArray(raw.segments) ? raw.segments.length : undefined,
-      fallback_reason:
-        "No trained disease checkpoint output was available, so the labelling class map is shown as the disease prediction layer.",
+      ...diseasePrediction,
+      status: diseasePrediction.source === "labelling_fallback" ? "skipped" : diseasePrediction.status,
+      error:
+        diseasePrediction.source === "labelling_fallback"
+          ? "Disease prediction was not generated. A trained disease model checkpoint is required."
+          : diseasePrediction.error,
     },
     visualizations: {
       ...visualizations,
-      diseasePredictionMapUrl: fallbackMapUrl,
-      diseasePredictionConfidenceMapUrl:
-        visualizations.diseasePredictionConfidenceMapUrl || visualizations.confidenceMapUrl || null,
-    },
-    artifacts: {
-      ...artifacts,
-      diseasePredictionTifUrl: artifacts.diseasePredictionTifUrl || artifacts.labelsTifUrl || null,
-      diseasePredictionStatsJsonUrl: artifacts.diseasePredictionStatsJsonUrl || artifacts.statisticsJsonUrl || null,
+      diseasePredictionMapUrl: null,
+      diseasePredictionConfidenceMapUrl: null,
+      diseasePredictionNotebookMapUrl: null,
+      diseasePredictionGroundTruthMapUrl: null,
     },
   };
 }
@@ -176,7 +131,7 @@ function serializeJob<T extends {
     labelMapUrl: job.labelMapUrl ? publicMapUrl(job.labelMapUrl) : null,
     ndviMapUrl: job.ndviMapUrl ? publicMapUrl(job.ndviMapUrl) : null,
     ndreMapUrl: job.ndreMapUrl ? publicMapUrl(job.ndreMapUrl) : null,
-    stats: serializeStats(withLabellingDiseaseFallback(job.stats, job.labelMapUrl)),
+    stats: serializeStats(withoutLabellingDiseaseFallback(job.stats)),
   };
 }
 
@@ -410,6 +365,7 @@ async function runLabellingJob(
               toAbsolutePath(inputRelativePath),
               path.join(tempDir, OUTPUT_FILES.ndviTif),
               path.join(tempDir, OUTPUT_FILES.ndreTif),
+              path.join(tempDir, OUTPUT_FILES.labelsTif),
               checkpointPath,
               tempDir,
               (message) => {
@@ -484,7 +440,7 @@ async function runLabellingJob(
     );
 
     const statsRaw = await fs.promises.readFile(path.join(tempDir, OUTPUT_FILES.stats), "utf8");
-    const stats = withLabellingDiseaseFallback({
+    const stats = withoutLabellingDiseaseFallback({
       ...JSON.parse(statsRaw),
       diseasePrediction,
       visualizations: {
@@ -503,6 +459,12 @@ async function runLabellingJob(
         ...(copiedDiseaseOutputs.has("diseasePredictionConfidenceMap")
           ? { diseasePredictionConfidenceMapUrl: diseaseOutputRelative.diseasePredictionConfidenceMap }
           : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionNotebookMap")
+          ? { diseasePredictionNotebookMapUrl: diseaseOutputRelative.diseasePredictionNotebookMap }
+          : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionGroundTruthMap")
+          ? { diseasePredictionGroundTruthMapUrl: diseaseOutputRelative.diseasePredictionGroundTruthMap }
+          : {}),
       },
       artifacts: {
         ndviTifUrl: outputRelative.ndviTif,
@@ -518,7 +480,7 @@ async function runLabellingJob(
           ? { diseasePredictionStatsJsonUrl: diseaseOutputRelative.diseasePredictionStats }
           : {}),
       },
-    }, outputRelative.labels) as Prisma.InputJsonValue;
+    }) as Prisma.InputJsonValue;
 
     await prisma.labellingJob.update({
       where: { id: jobId },
@@ -566,6 +528,7 @@ function executeDiseasePredictionScript(
   inputTif: string,
   ndviTif: string,
   ndreTif: string,
+  labelsTif: string,
   checkpointPath: string,
   outputDir: string,
   onProgress?: (msg: string) => void
@@ -581,6 +544,8 @@ function executeDiseasePredictionScript(
       ndviTif,
       "--ndre_tif",
       ndreTif,
+      "--labels_tif",
+      labelsTif,
       "--checkpoint",
       checkpointPath,
       "--output_dir",

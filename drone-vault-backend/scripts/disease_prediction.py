@@ -11,10 +11,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
+import tifffile as tiff
 import torch
 from matplotlib.colors import BoundaryNorm, ListedColormap
 from timm import create_model
 
+
+PATCH_SIZE = 224
+BATCH_SIZE = 8
+IGNORE_LABEL = 255
+SEED = 42
+NODATA_VALUE = 255
 
 CLASS_INFO: Dict[int, Tuple[str, Tuple[float, float, float], str]] = {
     0: ("Background/Water", (0.05, 0.12, 0.34), "#0f3b82"),
@@ -23,48 +30,49 @@ CLASS_INFO: Dict[int, Tuple[str, Tuple[float, float, float], str]] = {
     3: ("Diseased Crop", (0.86, 0.16, 0.12), "#dc291f"),
     4: ("Bare Soil", (0.55, 0.28, 0.08), "#8c4714"),
 }
-NODATA_VALUE = 255
-EPSILON = 1e-6
+
+
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 
 
 def log_step(stage: str, message: str) -> None:
     print(f"[disease-prediction] {stage} | {message}", flush=True)
 
 
-def read_raster(path: str) -> Tuple[np.ndarray, dict]:
-    with rasterio.open(path) as src:
-        arr = src.read().astype(np.float32)
-        profile = src.profile.copy()
-    return arr, profile
+def load_tif(path: str) -> np.ndarray:
+    with tiff.TiffFile(path) as tif:
+        arr = tif.series[0].asarray()
+
+    if arr.ndim == 2:
+        arr = arr[np.newaxis, :, :]
+    elif arr.ndim == 3:
+        if arr.shape[2] < arr.shape[0] and arr.shape[2] <= 20:
+            arr = np.transpose(arr, (2, 0, 1))
+
+    return arr
 
 
-def normalize_channels(image: np.ndarray) -> np.ndarray:
-    image = image.astype(np.float32, copy=True)
-    for channel_idx in range(image.shape[0]):
-        channel = image[channel_idx]
-        valid = channel[np.isfinite(channel)]
-        if valid.size == 0:
-            image[channel_idx] = np.zeros_like(channel, dtype=np.float32)
-            continue
-
-        low = float(np.nanpercentile(valid, 2))
-        high = float(np.nanpercentile(valid, 98))
-        if not np.isfinite(low) or not np.isfinite(high) or (high - low) < EPSILON:
-            image[channel_idx] = np.zeros_like(channel, dtype=np.float32)
-            continue
-
-        normalized = np.clip((channel - low) / (high - low + EPSILON), 0.0, 1.0)
-        image[channel_idx] = np.nan_to_num(normalized, nan=0.0, posinf=1.0, neginf=0.0)
-    return image
+def normalize(img: np.ndarray) -> np.ndarray:
+    img = img.astype(np.float32)
+    for c in range(img.shape[0]):
+        p2, p98 = np.percentile(img[c], (2, 98))
+        denom = p98 - p2
+        if denom < 1e-6:
+            img[c] = 0.0
+        else:
+            img[c] = np.clip((img[c] - p2) / denom, 0.0, 1.0)
+    return img
 
 
-def standardize_multispectral(multi: np.ndarray, target_bands: int) -> np.ndarray:
-    channels, height, width = multi.shape
-    if channels == target_bands:
+def standardize_multispectral(multi: np.ndarray, target_bands: int = 5) -> np.ndarray:
+    C, H, W = multi.shape
+
+    if C == target_bands:
         return multi
-    if channels < target_bands:
-        padding = np.zeros((target_bands - channels, height, width), dtype=multi.dtype)
-        return np.vstack([multi, padding])
+    if C < target_bands:
+        pad = np.zeros((target_bands - C, H, W), dtype=multi.dtype)
+        return np.vstack([multi, pad])
     return multi[:target_bands]
 
 
@@ -89,39 +97,38 @@ def pad_image(image: np.ndarray, min_height: int, min_width: int) -> np.ndarray:
 
 def load_checkpoint(path: str, device: torch.device) -> dict:
     checkpoint = torch.load(path, map_location=device)
-    if "model_state_dict" not in checkpoint:
-        raise ValueError("Checkpoint is missing model_state_dict")
-    if "model_name" not in checkpoint:
-        raise ValueError("Checkpoint is missing model_name")
-    if "num_classes" not in checkpoint:
-        raise ValueError("Checkpoint is missing num_classes")
-    if "label_map" not in checkpoint:
-        raise ValueError("Checkpoint is missing label_map")
+    for key in ("model_state_dict", "model_name", "num_classes", "label_map"):
+        if key not in checkpoint:
+            raise ValueError(f"Checkpoint is missing required key: '{key}'")
     return checkpoint
 
 
-def build_model(checkpoint: dict, in_chans: int, device: torch.device) -> torch.nn.Module:
-    model = create_model(
-        checkpoint["model_name"],
-        pretrained=False,
-        in_chans=in_chans,
-        num_classes=int(checkpoint["num_classes"]),
-    ).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.eval()
-    return model
+def build_geotiff_profile(profile: dict, array: np.ndarray, dtype: str, nodata: int) -> dict:
+    out_profile = profile.copy()
+    out_profile.update(
+        driver="GTiff",
+        dtype=dtype,
+        count=1,
+        compress="lzw",
+        nodata=nodata,
+        height=array.shape[0],
+        width=array.shape[1],
+    )
+    out_profile.pop("blockysize", None)
+    out_profile.pop("blockxsize", None)
+    out_profile.pop("tiled", None)
+    return out_profile
 
 
 def save_geotiff(profile: dict, array: np.ndarray, path: str, dtype: str, nodata: int = NODATA_VALUE) -> None:
-    out_profile = profile.copy()
-    out_profile.update(dtype=dtype, count=1, compress="lzw", nodata=nodata)
+    out_profile = build_geotiff_profile(profile, array, dtype, nodata)
     with rasterio.open(path, "w", **out_profile) as dst:
         dst.write(array.astype(dtype), 1)
 
 
-def save_prediction_map(prediction_map: np.ndarray, path: str) -> None:
-    display = np.ma.array(prediction_map, mask=(prediction_map == NODATA_VALUE))
-    classes = sorted(int(value) for value in np.unique(prediction_map) if int(value) in CLASS_INFO)
+def save_label_png(label_map: np.ndarray, path: str, title: str | None = None) -> None:
+    display = np.ma.array(label_map, mask=(label_map == NODATA_VALUE))
+    classes = sorted(int(value) for value in np.unique(label_map) if int(value) in CLASS_INFO)
     if not classes:
         classes = list(CLASS_INFO.keys())
 
@@ -132,15 +139,21 @@ def save_prediction_map(prediction_map: np.ndarray, path: str) -> None:
 
     plt.figure(figsize=(10, 10))
     plt.imshow(display, cmap=cmap, norm=norm, interpolation="nearest")
+    if title:
+        plt.title(title)
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
     plt.close()
 
 
-def save_confidence_map(confidence_map: np.ndarray, path: str) -> None:
+def save_confidence_map(confidence_map: np.ndarray, path: str, pred_label: np.ndarray | None = None) -> None:
+    display = confidence_map.copy().astype(np.float32)
+    if pred_label is not None:
+        display = np.ma.array(display, mask=(pred_label == NODATA_VALUE))
+
     plt.figure(figsize=(10, 10))
-    plt.imshow(confidence_map, cmap="viridis", vmin=0.0, vmax=1.0)
+    plt.imshow(display, cmap="viridis", vmin=0.0, vmax=1.0)
     plt.colorbar(label="Prediction Confidence", fraction=0.046, pad=0.04)
     plt.axis("off")
     plt.tight_layout()
@@ -166,8 +179,8 @@ def summarize_classes(prediction_map: np.ndarray) -> Dict[str, Dict[str, float]]
     uncertain = int(np.sum(prediction_map == NODATA_VALUE))
     summary[str(NODATA_VALUE)] = {
         "id": NODATA_VALUE,
-        "name": "Uncertain",
-        "color": "#ffffff",
+        "name": "Uncertain / No Data",
+        "color": "#d3d3d3",
         "pixels": uncertain,
         "percentage": float((uncertain / prediction_map.size) * 100) if prediction_map.size else 0.0,
     }
@@ -181,40 +194,59 @@ def process(args: argparse.Namespace) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = load_checkpoint(args.checkpoint, device)
 
-    patch_size = int(checkpoint.get("patch_size", args.patch_size))
+    patch_size = int(checkpoint.get("patch_size", args.patch_size or PATCH_SIZE))
     stride = args.stride if args.stride and args.stride > 0 else patch_size
 
-    log_step("7/8", "Reading orthomosaic, NDVI, and NDRE rasters for model inference")
-    multispectral, profile = read_raster(args.input_tif)
-    ndvi, _ = read_raster(args.ndvi_tif)
-    ndre, _ = read_raster(args.ndre_tif)
+    log_step("7/8", "Reading multispectral, NDVI, and NDRE TIFFs")
+    with rasterio.open(args.input_tif) as src:
+        profile = src.profile.copy()
 
-    multispectral = standardize_multispectral(multispectral, args.target_multispectral_bands)
-    image = np.vstack([multispectral, ndvi[:1], ndre[:1]])
-    image = normalize_channels(image)
+    multi = load_tif(args.input_tif)
+    multi = standardize_multispectral(multi, target_bands=args.target_multispectral_bands)
+    ndvi = load_tif(args.ndvi_tif)
+    ndre = load_tif(args.ndre_tif)
 
+    image = normalize(np.vstack([multi, ndvi[:1], ndre[:1]]))
     original_height = image.shape[1]
     original_width = image.shape[2]
+
+    gt_label = None
+    if args.labels_tif:
+        gt_label = load_tif(args.labels_tif)[0]
+        original_height = min(original_height, gt_label.shape[0])
+        original_width = min(original_width, gt_label.shape[1])
+
+    image = image[:, :original_height, :original_width]
     image = pad_image(image, patch_size, patch_size)
+    height = image.shape[1]
+    width = image.shape[2]
 
-    model_in_chans = int(checkpoint.get("in_chans", image.shape[0]))
-    if model_in_chans != image.shape[0]:
-        raise ValueError(
-            f"Checkpoint expects {model_in_chans} input channels, but prepared image has {image.shape[0]}"
-        )
-
-    model = build_model(checkpoint, model_in_chans, device)
-    inv_label_map = {int(new_id): int(old_id) for old_id, new_id in checkpoint["label_map"].items()}
     num_classes = int(checkpoint["num_classes"])
+    label_map = checkpoint["label_map"]
+    inv_label_map = {int(v): int(k) for k, v in label_map.items()}
+    in_chans = int(checkpoint.get("in_chans", image.shape[0]))
 
-    y_positions = compute_positions(image.shape[1], patch_size, stride)
-    x_positions = compute_positions(image.shape[2], patch_size, stride)
+    if in_chans != image.shape[0]:
+        raise ValueError(f"Checkpoint expects {in_chans} input channels, but prepared image has {image.shape[0]}")
+
+    model = create_model(
+        checkpoint["model_name"],
+        pretrained=False,
+        in_chans=in_chans,
+        num_classes=num_classes,
+    ).to(device)
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+
+    y_positions = compute_positions(height, patch_size, stride)
+    x_positions = compute_positions(width, patch_size, stride)
     tile_positions = [(y, x) for y in y_positions for x in x_positions]
     total_tiles = len(tile_positions)
 
-    pred_encoded_map = np.full((image.shape[1], image.shape[2]), -1, dtype=np.int16)
-    confidence_map = np.zeros((image.shape[1], image.shape[2]), dtype=np.float32)
-    coverage_map = np.zeros((image.shape[1], image.shape[2]), dtype=np.uint16)
+    votes = np.zeros((num_classes, height, width), dtype=np.uint32)
+    confidence_sum = np.zeros((height, width), dtype=np.float64)
+    coverage = np.zeros((height, width), dtype=np.uint32)
 
     log_step("7/8", f"Disease prediction: processed 0/{total_tiles} tiles")
 
@@ -222,52 +254,81 @@ def process(args: argparse.Namespace) -> None:
         for batch_start in range(0, total_tiles, args.batch_size):
             batch_positions = tile_positions[batch_start:batch_start + args.batch_size]
             patches = [
-                image[:, y:y + patch_size, x:x + patch_size]
-                for y, x in batch_positions
+                image[:, i:i + patch_size, j:j + patch_size]
+                for i, j in batch_positions
             ]
-            inputs = torch.from_numpy(np.stack(patches)).to(device=device, dtype=torch.float32)
-            logits = model(inputs)
-            probabilities = torch.softmax(logits, dim=1).cpu().numpy()
+            patch_tensor = torch.tensor(np.stack(patches), dtype=torch.float32).to(device)
+            probabilities = torch.softmax(model(patch_tensor), dim=1).cpu().numpy()
 
-            for batch_idx, (y, x) in enumerate(batch_positions):
-                patch_probs = probabilities[batch_idx]
-                pred_encoded = int(np.argmax(patch_probs))
-                pred_confidence = float(np.max(patch_probs))
-                current_confidence = confidence_map[y:y + patch_size, x:x + patch_size]
-                update_mask = pred_confidence >= current_confidence
-                pred_encoded_map[y:y + patch_size, x:x + patch_size][update_mask] = pred_encoded
-                confidence_map[y:y + patch_size, x:x + patch_size][update_mask] = pred_confidence
-                coverage_map[y:y + patch_size, x:x + patch_size] += 1
+            if probabilities.ndim == 2:
+                for batch_idx, (i, j) in enumerate(batch_positions):
+                    pred = int(np.argmax(probabilities[batch_idx]))
+                    confidence = float(np.max(probabilities[batch_idx]))
+                    votes[pred, i:i + patch_size, j:j + patch_size] += 1
+                    confidence_sum[i:i + patch_size, j:j + patch_size] += confidence
+                    coverage[i:i + patch_size, j:j + patch_size] += 1
+            elif probabilities.ndim == 4:
+                for batch_idx, (i, j) in enumerate(batch_positions):
+                    patch_probs = probabilities[batch_idx]
+                    patch_pred = np.argmax(patch_probs, axis=0)
+                    patch_confidence = np.max(patch_probs, axis=0)
+
+                    for class_id in range(num_classes):
+                        votes[class_id, i:i + patch_size, j:j + patch_size] += (
+                            patch_pred == class_id
+                        ).astype(np.uint32)
+                    confidence_sum[i:i + patch_size, j:j + patch_size] += patch_confidence
+                    coverage[i:i + patch_size, j:j + patch_size] += 1
+            else:
+                raise ValueError(f"Unexpected model output shape: {probabilities.shape}")
 
             processed = min(batch_start + len(batch_positions), total_tiles)
             log_step("7/8", f"Disease prediction: processed {processed}/{total_tiles} tiles")
 
-    prediction_map = np.full(pred_encoded_map.shape, NODATA_VALUE, dtype=np.uint8)
-    for encoded_id, original_id in inv_label_map.items():
-        prediction_map[pred_encoded_map == encoded_id] = original_id
+    pred_encoded = np.argmax(votes, axis=0)
+    pred_label = np.full(pred_encoded.shape, NODATA_VALUE, dtype=np.uint8)
+
+    for new_id, old_id in inv_label_map.items():
+        pred_label[pred_encoded == new_id] = old_id if old_id in CLASS_INFO else NODATA_VALUE
+
+    confidence_map = np.divide(
+        confidence_sum,
+        coverage,
+        out=np.zeros_like(confidence_sum, dtype=np.float64),
+        where=coverage > 0,
+    ).astype(np.float32)
 
     if args.prediction_threshold > 0:
-        prediction_map[confidence_map < args.prediction_threshold] = NODATA_VALUE
+        pred_label[confidence_map < args.prediction_threshold] = NODATA_VALUE
 
-    prediction_map[coverage_map == 0] = NODATA_VALUE
-    prediction_map = prediction_map[:original_height, :original_width]
+    pred_label[coverage == 0] = NODATA_VALUE
+    pred_label = pred_label[:original_height, :original_width]
     confidence_map = confidence_map[:original_height, :original_width]
-    coverage_map = coverage_map[:original_height, :original_width]
+    coverage = coverage[:original_height, :original_width]
 
     prediction_tif_path = os.path.join(args.output_dir, "disease_prediction.tif")
     prediction_png_path = os.path.join(args.output_dir, "disease_prediction.png")
     confidence_png_path = os.path.join(args.output_dir, "disease_prediction_confidence.png")
     stats_path = os.path.join(args.output_dir, "disease_prediction_statistics.json")
+    predicted_map_path = os.path.join(args.output_dir, "predicted_map.png")
+    ground_truth_path = os.path.join(args.output_dir, "ground_truth.png")
 
-    log_step("8/8", f"Writing prediction map, confidence map, and statistics to {args.output_dir}")
-    save_geotiff(profile, prediction_map, prediction_tif_path, "uint8")
-    save_prediction_map(prediction_map, prediction_png_path)
-    save_confidence_map(confidence_map, confidence_png_path)
+    log_step("8/8", f"Writing predicted map outputs to {args.output_dir}")
+    save_geotiff(profile, pred_label, prediction_tif_path, "uint8")
+    save_label_png(pred_label, prediction_png_path, "Predicted Classification")
+    save_label_png(pred_label, predicted_map_path, "Predicted Classification")
+    save_confidence_map(confidence_map, confidence_png_path, pred_label=pred_label)
 
-    valid_confidence = confidence_map[prediction_map != NODATA_VALUE]
+    if gt_label is not None:
+        gt_vis = gt_label[:original_height, :original_width].copy()
+        gt_vis[gt_vis == IGNORE_LABEL] = 0
+        save_label_png(gt_vis.astype(np.uint8), ground_truth_path, "Ground Truth")
+
+    valid_confidence = confidence_map[pred_label != NODATA_VALUE]
     stats = {
         "enabled": True,
         "status": "completed",
+        "source": "updatedallinone.ipynb",
         "model_name": checkpoint["model_name"],
         "checkpoint_name": os.path.basename(args.checkpoint),
         "device": str(device),
@@ -279,11 +340,21 @@ def process(args: argparse.Namespace) -> None:
         "num_tiles": total_tiles,
         "num_classes": num_classes,
         "prediction_threshold": args.prediction_threshold,
-        "classes": summarize_classes(prediction_map),
+        "classes": summarize_classes(pred_label),
+        "confidence": {
+            "mean": float(np.mean(valid_confidence)) if valid_confidence.size else 0.0,
+            "min": float(np.min(valid_confidence)) if valid_confidence.size else 0.0,
+            "max": float(np.max(valid_confidence)) if valid_confidence.size else 0.0,
+            "std": float(np.std(valid_confidence)) if valid_confidence.size else 0.0,
+        },
         "average_confidence": float(np.mean(valid_confidence)) if valid_confidence.size else 0.0,
         "min_confidence": float(np.min(valid_confidence)) if valid_confidence.size else 0.0,
         "max_confidence": float(np.max(valid_confidence)) if valid_confidence.size else 0.0,
-        "covered_pixels": int(np.sum(coverage_map > 0)),
+        "covered_pixels": int(np.sum(coverage > 0)),
+        "outputs": {
+            "ground_truth": os.path.basename(ground_truth_path) if gt_label is not None else None,
+            "predicted_map": os.path.basename(predicted_map_path),
+        },
     }
 
     with open(stats_path, "w", encoding="utf-8") as handle:
@@ -297,12 +368,13 @@ def main() -> None:
     parser.add_argument("--input_tif", required=True)
     parser.add_argument("--ndvi_tif", required=True)
     parser.add_argument("--ndre_tif", required=True)
+    parser.add_argument("--labels_tif")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--target_multispectral_bands", type=int, default=5)
-    parser.add_argument("--patch_size", type=int, default=224)
+    parser.add_argument("--patch_size", type=int, default=PATCH_SIZE)
     parser.add_argument("--stride", type=int, default=0)
-    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--batch_size", type=int, default=BATCH_SIZE)
     parser.add_argument("--prediction_threshold", type=float, default=0.0)
     process(parser.parse_args())
 

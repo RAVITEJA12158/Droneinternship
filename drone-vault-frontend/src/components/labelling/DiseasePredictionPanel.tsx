@@ -27,7 +27,7 @@ interface Props {
 }
 
 type CompareMode = 'single' | 'blend' | 'swipe'
-type LayerKey = 'prediction' | 'confidence'
+type LayerKey = 'prediction' | 'confidence' | 'groundTruth'
 
 function formatNumber(value?: number) {
   if (typeof value !== 'number' || Number.isNaN(value)) return 'N/A'
@@ -99,11 +99,13 @@ export function DiseasePredictionPanel({ missionId, orthomosaics }: Props) {
 
   const rgbOrthomosaic = orthomosaics.find(o => o.type === 'RGB')
   const diseaseStats = job?.stats?.diseasePrediction
-  const predictionUrl = job?.stats?.visualizations?.diseasePredictionMapUrl
+  const predictionUrl = job?.stats?.visualizations?.diseasePredictionNotebookMapUrl || job?.stats?.visualizations?.diseasePredictionMapUrl
   const confidenceUrl = job?.stats?.visualizations?.diseasePredictionConfidenceMapUrl
+  const groundTruthUrl = job?.stats?.visualizations?.diseasePredictionGroundTruthMapUrl
   const layerUrls: Record<LayerKey, string | null | undefined> = {
     prediction: predictionUrl,
     confidence: confidenceUrl,
+    groundTruth: groundTruthUrl,
   }
   const activeUrl = layerUrls[activeLayer] || predictionUrl || confidenceUrl
   const rgbUrl = rgbOrthomosaic ? orthomosaicsApi.getPreviewUrl(rgbOrthomosaic.id) : null
@@ -357,6 +359,21 @@ export function DiseasePredictionPanel({ missionId, orthomosaics }: Props) {
             >
               Confidence
             </button>
+            <button
+              type="button"
+              disabled={!groundTruthUrl}
+              onClick={() => {
+                setActiveLayer('groundTruth')
+                setZoom(1)
+              }}
+              className={`h-9 rounded-lg border px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                activeLayer === 'groundTruth'
+                  ? 'border-cyan-600 bg-cyan-50 text-cyan-800'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+              }`}
+            >
+              Ground Truth
+            </button>
           </div>
         </div>
 
@@ -374,7 +391,7 @@ export function DiseasePredictionPanel({ missionId, orthomosaics }: Props) {
           <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 text-white" role="dialog" aria-modal="true">
             <div className="flex flex-col gap-3 border-b border-white/10 p-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <p className="text-sm font-semibold">{activeLayer === 'prediction' ? 'Prediction' : 'Confidence'}</p>
+                <p className="text-sm font-semibold">{activeLayer === 'prediction' ? 'Prediction' : activeLayer === 'confidence' ? 'Confidence' : 'Ground Truth'}</p>
                 <p className="text-xs text-slate-400">Fullscreen disease prediction viewer</p>
               </div>
               <div className="flex flex-wrap items-center gap-3">

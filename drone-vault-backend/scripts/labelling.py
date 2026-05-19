@@ -27,10 +27,11 @@ CLASS_INFO: Dict[int, Tuple[str, Tuple[float, float, float], str]] = {
 }
 NODATA_VALUE = 255
 EPSILON = 1e-6
+STEP_TAG = "labelling"
 
 
 def log_step(stage: str, message: str) -> None:
-    print(f"[labelling] {stage} | {message}", flush=True)
+    print(f"[{STEP_TAG}] {stage} | {message}", flush=True)
 
 
 def read_band(src: rasterio.io.DatasetReader, index: int) -> np.ndarray:
@@ -162,7 +163,7 @@ def save_index_heatmap(arr: np.ndarray, path: str, title: str, cmap: str) -> Non
     plt.figure(figsize=(10, 10))
     plt.imshow(arr, cmap=cmap, vmin=-1, vmax=1)
     plt.colorbar(label=title, fraction=0.046, pad=0.04)
-    plt.title(title)
+    plt.title(f"Step 1 Labelling - {title}")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
@@ -173,7 +174,7 @@ def save_histogram(arr: np.ndarray, path: str, title: str) -> None:
     valid = arr[np.isfinite(arr)]
     plt.figure(figsize=(10, 5))
     plt.hist(valid, bins=100, color="#64748b")
-    plt.title(title)
+    plt.title(f"Step 1 Labelling - {title}")
     plt.xlabel("Value")
     plt.ylabel("Frequency")
     plt.tight_layout()
@@ -194,7 +195,7 @@ def save_class_distribution(label_map: np.ndarray, path: str) -> None:
     plt.bar(labels, counts, color=colors)
     plt.xticks(rotation=20, ha="right")
     plt.ylabel("Pixels")
-    plt.title("Class Distribution")
+    plt.title("Step 1 Labelling - Class Distribution")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.04)
     plt.close()
@@ -227,7 +228,7 @@ def save_class_distribution_pie(label_map: np.ndarray, path: str) -> None:
         counterclock=False,
         textprops={"fontsize": 9},
     )
-    plt.title("Class Distribution Percentage")
+    plt.title("Step 1 Labelling - Class Distribution Percentage")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.04)
     plt.close()
@@ -247,7 +248,7 @@ def save_scatter(ndvi: np.ndarray, ndre: np.ndarray, path: str) -> None:
     plt.scatter(ndvi_values, ndre_values, s=1, alpha=0.25, color="#0891b2")
     plt.xlabel("NDVI")
     plt.ylabel("NDRE")
-    plt.title("NDVI vs NDRE")
+    plt.title("Step 1 Labelling - NDVI vs NDRE")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.04)
     plt.close()
@@ -257,7 +258,7 @@ def save_source_composite(red: np.ndarray, red_edge: np.ndarray, nir: np.ndarray
     composite = false_color_composite(red, red_edge, nir)
     plt.figure(figsize=(10, 10))
     plt.imshow(composite)
-    plt.title("Multispectral False-Color Composite")
+    plt.title("Step 1 Labelling - Multispectral False-Color Composite")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
@@ -277,6 +278,7 @@ def save_label_map(label_map: np.ndarray, path: str) -> None:
 
     plt.figure(figsize=(10, 10))
     plt.imshow(display, cmap=cmap, norm=norm, interpolation="nearest")
+    plt.title("Step 1 Labelling - SLIC Superpixel Classification")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
@@ -288,7 +290,7 @@ def save_superpixel_map(ndvi: np.ndarray, segments: np.ndarray, path: str) -> No
     overlay = mark_boundaries(base, segments, color=(1, 1, 1), mode="thick")
     plt.figure(figsize=(10, 10))
     plt.imshow(overlay)
-    plt.title("NDVI with Superpixel Boundaries")
+    plt.title("Step 1 Labelling - NDVI with Superpixel Boundaries")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
@@ -297,9 +299,9 @@ def save_superpixel_map(ndvi: np.ndarray, segments: np.ndarray, path: str) -> No
 
 def save_confidence_map(confidence_map: np.ndarray, path: str) -> None:
     plt.figure(figsize=(10, 10))
-    plt.imshow(confidence_map, cmap="viridis", vmin=0, vmax=1)
-    plt.colorbar(label="Confidence", fraction=0.046, pad=0.04)
-    plt.title("Confidence Map")
+    plt.imshow(confidence_map, cmap="plasma", vmin=0, vmax=1)
+    plt.colorbar(label="Labelling Confidence", fraction=0.046, pad=0.04)
+    plt.title("Step 1 Labelling - Confidence Map")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
@@ -312,7 +314,7 @@ def save_label_overlay(red: np.ndarray, red_edge: np.ndarray, nir: np.ndarray, l
 
     plt.figure(figsize=(10, 10))
     plt.imshow(np.clip(overlay, 0, 1))
-    plt.title("Label Boundaries on Multispectral Composite")
+    plt.title("Step 1 Labelling - Label Boundaries on Multispectral Composite")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.02)
@@ -444,24 +446,24 @@ def process(args: argparse.Namespace) -> None:
         if should_report:
             log_step("5/6", f"Classifying superpixels: processed {processed_count}/{total_segments} segments")
 
-    ndvi_tif_path = os.path.join(args.output_dir, "ndvi.tif")
-    ndre_tif_path = os.path.join(args.output_dir, "ndre.tif")
-    labels_tif_path = os.path.join(args.output_dir, "labels_pixelwise.tif")
-    superpixels_tif_path = os.path.join(args.output_dir, "superpixels.tif")
-    ndvi_path = os.path.join(args.output_dir, "ndvi_heatmap.png")
-    ndre_path = os.path.join(args.output_dir, "ndre_heatmap.png")
-    composite_path = os.path.join(args.output_dir, "source_composite.png")
-    superpixels_path = os.path.join(args.output_dir, "superpixels_overlay.png")
-    labels_path = os.path.join(args.output_dir, "labels_classified.png")
-    overlay_path = os.path.join(args.output_dir, "labels_overlay.png")
-    ndvi_histogram_path = os.path.join(args.output_dir, "ndvi_histogram.png")
-    ndre_histogram_path = os.path.join(args.output_dir, "ndre_histogram.png")
-    class_distribution_path = os.path.join(args.output_dir, "class_distribution.png")
-    class_distribution_pie_path = os.path.join(args.output_dir, "class_distribution_pie.png")
-    scatter_path = os.path.join(args.output_dir, "ndvi_ndre_scatter.png")
-    confidence_path = os.path.join(args.output_dir, "confidence_map.png")
-    summary_csv_path = os.path.join(args.output_dir, "dataset_summary.csv")
-    stats_path = os.path.join(args.output_dir, "statistics.json")
+    ndvi_tif_path = os.path.join(args.output_dir, "labelling_ndvi.tif")
+    ndre_tif_path = os.path.join(args.output_dir, "labelling_ndre.tif")
+    labels_tif_path = os.path.join(args.output_dir, "labelling_labels_pixelwise.tif")
+    superpixels_tif_path = os.path.join(args.output_dir, "labelling_superpixels.tif")
+    ndvi_path = os.path.join(args.output_dir, "labelling_ndvi_heatmap.png")
+    ndre_path = os.path.join(args.output_dir, "labelling_ndre_heatmap.png")
+    composite_path = os.path.join(args.output_dir, "labelling_source_composite.png")
+    superpixels_path = os.path.join(args.output_dir, "labelling_superpixels_overlay.png")
+    labels_path = os.path.join(args.output_dir, "labelling_labels_classified.png")
+    overlay_path = os.path.join(args.output_dir, "labelling_labels_overlay.png")
+    ndvi_histogram_path = os.path.join(args.output_dir, "labelling_ndvi_histogram.png")
+    ndre_histogram_path = os.path.join(args.output_dir, "labelling_ndre_histogram.png")
+    class_distribution_path = os.path.join(args.output_dir, "labelling_class_distribution.png")
+    class_distribution_pie_path = os.path.join(args.output_dir, "labelling_class_distribution_pie.png")
+    scatter_path = os.path.join(args.output_dir, "labelling_ndvi_ndre_scatter.png")
+    confidence_path = os.path.join(args.output_dir, "labelling_confidence_map.png")
+    summary_csv_path = os.path.join(args.output_dir, "labelling_dataset_summary.csv")
+    stats_path = os.path.join(args.output_dir, "labelling_statistics.json")
 
     log_step("6/6", f"Writing GeoTIFFs, charts, overlays, and statistics to {args.output_dir}")
 
@@ -486,6 +488,8 @@ def process(args: argparse.Namespace) -> None:
     save_dataset_summary(classes, summary_csv_path)
 
     stats = {
+        "pipeline_step": 1,
+        "pipeline_step_name": "labelling",
         "labeling_method": "slic_percentile_kmeans_distance_confidence",
         "parameters": {
             "red_band": args.red_band,

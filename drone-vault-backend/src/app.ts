@@ -27,6 +27,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser(env.COOKIE_SECRET));
 
+app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
@@ -37,8 +39,6 @@ app.use("/api/orthomosaics", orthomosaicRoutes);
 app.use("/api/exports", exportRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/search", searchRoutes);
-
-app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
 app.use(errorMiddleware);
 
