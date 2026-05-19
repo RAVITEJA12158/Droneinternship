@@ -69,6 +69,93 @@ function serializeStats(stats: unknown) {
   };
 }
 
+function averageSegmentConfidence(segments: unknown) {
+  if (!Array.isArray(segments)) return undefined;
+  let total = 0;
+  let count = 0;
+  for (const segment of segments) {
+    if (!segment || typeof segment !== "object") continue;
+    const confidence = (segment as Record<string, unknown>).confidence;
+    if (typeof confidence !== "number" || !Number.isFinite(confidence)) continue;
+    total += confidence;
+    count += 1;
+  }
+  return count ? total / count : undefined;
+}
+
+function coveredClassPixels(classes: unknown) {
+  if (!classes || typeof classes !== "object" || Array.isArray(classes)) return undefined;
+  let total = 0;
+  for (const item of Object.values(classes as Record<string, unknown>)) {
+    if (!item || typeof item !== "object") continue;
+    const classStats = item as Record<string, unknown>;
+    if (classStats.id === 255) continue;
+    if (typeof classStats.pixels === "number") total += classStats.pixels;
+  }
+  return total;
+}
+
+function withLabellingDiseaseFallback(
+  stats: unknown,
+  labelMapUrl?: string | null
+) {
+  if (!stats || typeof stats !== "object" || Array.isArray(stats)) return stats;
+
+  const raw = stats as Record<string, unknown>;
+  if (!raw.classes) return raw;
+
+  const visualizations =
+    raw.visualizations && typeof raw.visualizations === "object" && !Array.isArray(raw.visualizations)
+      ? raw.visualizations as Record<string, unknown>
+      : {};
+  const artifacts =
+    raw.artifacts && typeof raw.artifacts === "object" && !Array.isArray(raw.artifacts)
+      ? raw.artifacts as Record<string, unknown>
+      : {};
+  const diseasePrediction =
+    raw.diseasePrediction && typeof raw.diseasePrediction === "object" && !Array.isArray(raw.diseasePrediction)
+      ? raw.diseasePrediction as Record<string, unknown>
+      : null;
+
+  if (diseasePrediction?.status === "completed" && visualizations.diseasePredictionMapUrl) {
+    return raw;
+  }
+
+  const fallbackMapUrl = visualizations.diseasePredictionMapUrl || labelMapUrl;
+  if (!fallbackMapUrl) return raw;
+
+  const averageConfidence = averageSegmentConfidence(raw.segments);
+  const coveredPixels = coveredClassPixels(raw.classes);
+
+  return {
+    ...raw,
+    diseasePrediction: {
+      enabled: false,
+      status: "completed",
+      source: "labelling_fallback",
+      model_name: "Labelling classifier",
+      checkpoint_name: "Not configured",
+      classes: raw.classes,
+      average_confidence: averageConfidence,
+      covered_pixels: coveredPixels,
+      num_tiles: Array.isArray(raw.segments) ? raw.segments.length : undefined,
+      fallback_reason:
+        "No trained disease checkpoint output was available, so the labelling class map is shown as the disease prediction layer.",
+    },
+    visualizations: {
+      ...visualizations,
+      diseasePredictionMapUrl: fallbackMapUrl,
+      diseasePredictionConfidenceMapUrl:
+        visualizations.diseasePredictionConfidenceMapUrl || visualizations.confidenceMapUrl || null,
+    },
+    artifacts: {
+      ...artifacts,
+      diseasePredictionTifUrl: artifacts.diseasePredictionTifUrl || artifacts.labelsTifUrl || null,
+      diseasePredictionStatsJsonUrl: artifacts.diseasePredictionStatsJsonUrl || artifacts.statisticsJsonUrl || null,
+    },
+  };
+}
+
 function serializeJob<T extends {
   labelMapUrl: string | null;
   ndviMapUrl: string | null;
@@ -81,7 +168,7 @@ function serializeJob<T extends {
     labelMapUrl: job.labelMapUrl ? publicMapUrl(job.labelMapUrl) : null,
     ndviMapUrl: job.ndviMapUrl ? publicMapUrl(job.ndviMapUrl) : null,
     ndreMapUrl: job.ndreMapUrl ? publicMapUrl(job.ndreMapUrl) : null,
-    stats: serializeStats(job.stats),
+    stats: serializeStats(withLabellingDiseaseFallback(job.stats, job.labelMapUrl)),
   };
 }
 
@@ -388,7 +475,7 @@ async function runLabellingJob(
     );
 
     const statsRaw = await fs.promises.readFile(path.join(tempDir, OUTPUT_FILES.stats), "utf8");
-    const stats = {
+    const stats = withLabellingDiseaseFallback({
       ...JSON.parse(statsRaw),
       diseasePrediction,
       visualizations: {
@@ -422,7 +509,7 @@ async function runLabellingJob(
           ? { diseasePredictionStatsJsonUrl: diseaseOutputRelative.diseasePredictionStats }
           : {}),
       },
-    };
+    }, outputRelative.labels) as Prisma.InputJsonValue;
 
     await prisma.labellingJob.update({
       where: { id: jobId },
