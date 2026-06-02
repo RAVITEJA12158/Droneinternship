@@ -1,27 +1,10 @@
 
-> drone-vault-frontend@0.1.0 dev
-> next dev -H 0.0.0.0
+> drone-vault-frontend@0.1.0 start
+> next start -H 0.0.0.0
 
   ▲ Next.js 14.2.5
   - Local:        http://localhost:3000
   - Network:      http://0.0.0.0:3000
 
  ✓ Starting...
- ✓ Ready in 3.1s
- ✓ Compiled /src/middleware in 272ms (73 modules)
- ○ Compiling /login ...
- ✓ Compiled /login in 3.5s (845 modules)
- GET /login 200 in 3991ms
- ✓ Compiled in 566ms (391 modules)
- ✓ Compiled in 94ms (377 modules)
- GET /login 200 in 63ms
- HEAD /login 200 in 51ms
- ○ Compiling / ...
- ✓ Compiled / in 1205ms (921 modules)
- GET / 200 in 1491ms
- ○ Compiling /_not-found ...
- ✓ Compiled /_not-found in 540ms (924 modules)
- GET /_next/static/css/app/layout.css?v=1779182813468 404 in 728ms
- GET /_next/static/chunks/main-app.js?v=1779182813468 404 in 724ms
- GET /_next/static/chunks/app-pages-internals.js 404 in 709ms
- GET /_next/static/chunks/app/layout.js 404 in 407ms
+ ✓ Ready in 618ms
