@@ -10,6 +10,7 @@ import { CaptureSetCard } from '@/components/gallery/CaptureSetCard'
 import { OrthomosaicViewer } from '@/components/orthomosaic/OrthomosaicViewer'
 import { ExportPanel } from '@/components/export/ExportPanel'
 import { DiseasePredictionPanel } from '@/components/labelling/DiseasePredictionPanel'
+import { YieldPredictionPanel } from '@/components/labelling/YieldPredictionPanel'
 import { LabellingPanel } from '@/components/labelling/LabellingPanel'
 import { MissionMapDynamic } from '@/components/map/MissionMapDynamic'
 import { Button } from '@/components/ui/Button'
@@ -78,6 +79,15 @@ function DiseasePredictionTab({ missionId }: { missionId: string }) {
   if (isError) return <ErrorState />
 
   return <DiseasePredictionPanel missionId={missionId} orthomosaics={data ?? []} />
+}
+
+function YieldPredictionTab({ missionId }: { missionId: string }) {
+  const { data, isLoading, isError } = useOrthomosaics(missionId)
+
+  if (isLoading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+  if (isError) return <ErrorState />
+
+  return <YieldPredictionPanel missionId={missionId} orthomosaics={data ?? []} />
 }
 
 function MissionMapTab({ missionId }: { missionId: string }) {
@@ -201,6 +211,7 @@ export default function MissionDetailPage() {
     { id: 'orthomosaics', label: 'Orthomosaics', content: <OrthomosaicsTab missionId={missionId} /> },
     { id: 'labelling', label: 'Labelling', content: <LabellingTab missionId={missionId} /> },
     { id: 'diseaseprediction', label: 'Disease Prediction', content: <DiseasePredictionTab missionId={missionId} /> },
+    { id: 'yieldprediction', label: 'Yield Prediction', content: <YieldPredictionTab missionId={missionId} /> },
     { id: 'map', label: 'Map', content: <MissionMapTab missionId={missionId} /> },
     { id: 'exports', label: 'Exports', content: <ExportPanel missionId={missionId} /> },
   ]

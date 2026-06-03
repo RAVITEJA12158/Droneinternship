@@ -41,14 +41,8 @@ def log_step(stage: str, message: str) -> None:
 
 
 def load_tif(path: str) -> np.ndarray:
-    with tiff.TiffFile(path) as tif:
-        arr = tif.series[0].asarray()
-
-    if arr.ndim == 2:
-        arr = arr[np.newaxis, :, :]
-    elif arr.ndim == 3:
-        if arr.shape[2] < arr.shape[0] and arr.shape[2] <= 20:
-            arr = np.transpose(arr, (2, 0, 1))
+    with rasterio.open(path) as src:
+        arr = src.read()
 
     return arr
 
@@ -94,13 +88,26 @@ def pad_image(image: np.ndarray, min_height: int, min_width: int) -> np.ndarray:
         return image
     return np.pad(image, ((0, 0), (0, pad_height), (0, pad_width)), mode="constant", constant_values=0)
 
+def load_checkpoint(path: str, device):
+    ckpt = torch.load(path, map_location=device)
 
-def load_checkpoint(path: str, device: torch.device) -> dict:
-    checkpoint = torch.load(path, map_location=device)
-    for key in ("model_state_dict", "model_name", "num_classes", "label_map"):
-        if key not in checkpoint:
-            raise ValueError(f"Checkpoint is missing required key: '{key}'")
-    return checkpoint
+    if "model_state_dict" in ckpt:
+        return ckpt
+
+    return {
+        "model_name": "maxvit_tiny_tf_224",
+        "model_state_dict": ckpt,
+        "num_classes": 5,
+        "label_map": {
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+        },
+        "in_chans": 7,
+        "patch_size": 224,
+    }
 
 
 def build_geotiff_profile(profile: dict, array: np.ndarray, dtype: str, nodata: int) -> dict:
@@ -229,12 +236,12 @@ def process(args: argparse.Namespace) -> None:
     if in_chans != image.shape[0]:
         raise ValueError(f"Checkpoint expects {in_chans} input channels, but prepared image has {image.shape[0]}")
 
-    model = create_model(
-        checkpoint["model_name"],
-        pretrained=False,
-        in_chans=in_chans,
-        num_classes=num_classes,
-    ).to(device)
+        model = create_model(
+                "maxvit_tiny_tf_224",
+                pretrained=False,
+                in_chans=7,
+                num_classes=5,
+        )
 
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()

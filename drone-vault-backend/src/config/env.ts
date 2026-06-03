@@ -23,10 +23,11 @@ export const env = {
   STORAGE_ROOT: storageRoot,
   PYTHON_BIN: process.env.PYTHON_BIN || "python",
  DISEASE_MODEL_CHECKPOINT:
+  process.env.DISEASE_MODEL_CHECKPOINT ||
   path.join(storageRoot, "models", "disease_model.pth"),
-  YIELD_MODEL_CHECKPOINT:
+YIELD_MODEL_CHECKPOINT:
+  process.env.YIELD_MODEL_CHECKPOINT ||
   path.join(storageRoot, "models", "yield_model.pth"),
-  // REDIS_URL is intentionally not required by the HTTP API.
   PORT: parseInt(process.env.PORT || "4000", 10),
   NODE_ENV: process.env.NODE_ENV || "development",
 };

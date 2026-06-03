@@ -13,7 +13,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import { useLabelling } from '@/hooks/useLabelling'
+import { useLabelling, useResumeDisease } from '@/hooks/useLabelling'
 import { Orthomosaic } from '@/types'
 import { orthomosaicsApi } from '@/lib/api/orthomosaics'
 import { Button } from '@/components/ui/Button'
@@ -102,6 +102,7 @@ export function DiseasePredictionPanel({ missionId, orthomosaics }: Props) {
   const predictionUrl = job?.stats?.visualizations?.diseasePredictionNotebookMapUrl || job?.stats?.visualizations?.diseasePredictionMapUrl
   const confidenceUrl = job?.stats?.visualizations?.diseasePredictionConfidenceMapUrl
   const groundTruthUrl = job?.stats?.visualizations?.diseasePredictionGroundTruthMapUrl
+  const resume = useResumeDisease(missionId)
   const layerUrls: Record<LayerKey, string | null | undefined> = {
     prediction: predictionUrl,
     confidence: confidenceUrl,
@@ -290,11 +291,18 @@ export function DiseasePredictionPanel({ missionId, orthomosaics }: Props) {
 
   if (!diseaseStats || diseaseStats.status === 'skipped') {
     return (
-      <EmptyState
-        icon={BrainCircuit}
-        title="Disease prediction not available"
-        description={diseaseStats?.error || 'No disease prediction outputs were generated for this mission.'}
-      />
+      <div>
+        <EmptyState
+          icon={BrainCircuit}
+          title="Disease prediction not available"
+          description={diseaseStats?.error || 'No disease prediction outputs were generated for this mission.'}
+        />
+        <div className="mt-3 flex justify-center">
+          <Button loading={resume.isLoading} onClick={() => resume.mutate()}>
+            Retry disease prediction
+          </Button>
+        </div>
+      </div>
     )
   }
 
@@ -304,6 +312,11 @@ export function DiseasePredictionPanel({ missionId, orthomosaics }: Props) {
         <h3 className="text-center text-lg font-bold text-red-700">Disease prediction failed</h3>
         <div className="mx-auto mt-4 max-w-3xl rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-900">
           {diseaseStats.error || 'The disease prediction step failed unexpectedly.'}
+        </div>
+        <div className="mt-4 flex justify-center">
+          <Button loading={resume.isLoading} onClick={() => resume.mutate()}>
+            Retry disease prediction
+          </Button>
         </div>
       </div>
     )

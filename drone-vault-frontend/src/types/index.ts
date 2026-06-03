@@ -95,6 +95,7 @@ export interface LabellingVisualizations {
   diseasePredictionConfidenceMapUrl?: string | null
   diseasePredictionNotebookMapUrl?: string | null
   diseasePredictionGroundTruthMapUrl?: string | null
+  yieldPredictionHeatmapUrl?: string | null
   ndviHistogramUrl?: string | null
   ndreHistogramUrl?: string | null
   classDistributionUrl?: string | null
@@ -109,6 +110,7 @@ export interface LabellingArtifacts {
   superpixelsTifUrl?: string | null
   diseasePredictionTifUrl?: string | null
   diseasePredictionStatsJsonUrl?: string | null
+  yieldPredictionStatsJsonUrl?: string | null
   statisticsJsonUrl?: string | null
   datasetSummaryCsvUrl?: string | null
 }
@@ -134,6 +136,28 @@ export interface DiseasePredictionStats {
   classes?: Record<string, LabellingClassStats>
 }
 
+export interface YieldPredictionStats {
+  enabled?: boolean
+  status?: string
+  error?: string
+  model_name?: string
+  checkpoint_name?: string
+  device?: string
+  patch_size?: number
+  batch_size?: number
+  max_channels?: number
+  ndvi_threshold?: number
+  yield_scale?: number
+  num_patches?: number
+  grid_rows?: number
+  grid_cols?: number
+  predicted_yield_tonnes?: number
+  min_patch_yield_tonnes?: number
+  max_patch_yield_tonnes?: number
+  mean_patch_yield_tonnes?: number
+  metrics?: Record<string, number>
+}
+
 export interface LabellingStats {
   message?: string
   progress?: number
@@ -148,6 +172,7 @@ export interface LabellingStats {
   cluster_centers?: number[][]
   segments?: LabellingSegmentStats[]
   diseasePrediction?: DiseasePredictionStats
+  yieldPrediction?: YieldPredictionStats
   visualizations?: LabellingVisualizations
   artifacts?: LabellingArtifacts
   error?: string

@@ -21,6 +21,18 @@ export async function stop(req: Request, res: Response, next: NextFunction) {
   } catch (err) { next(err); }
 }
 
+export async function resumeDisease(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(202).json(await labellingService.startDiseasePrediction(req.params.id, req.user!.id));
+  } catch (err) { next(err); }
+}
+
+export async function resumeYield(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(202).json(await labellingService.startYieldPrediction(req.params.id, req.user!.id));
+  } catch (err) { next(err); }
+}
+
 export async function map(req: Request, res: Response, next: NextFunction) {
   try {
     const relativePath = String(req.query.path || "");

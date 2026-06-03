@@ -83,7 +83,11 @@ def extract_patches(
 
 def load_model(checkpoint_path: str, max_channels: int, device: torch.device) -> Tuple[YieldTransformer, Dict[str, float]]:
     model = YieldTransformer(max_channels=max_channels).to(device)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location=device,
+        weights_only=False,
+    )
     state_dict = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
     model.load_state_dict(state_dict)
     model.eval()

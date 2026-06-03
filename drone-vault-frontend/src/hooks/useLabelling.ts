@@ -44,3 +44,33 @@ export function useStopLabelling(missionId: string) {
     },
   })
 }
+
+export function useResumeDisease(missionId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => labellingApi.startDisease(missionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['labelling', missionId] })
+      toast.success('Disease prediction started')
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Failed to start disease prediction')
+    },
+  })
+}
+
+export function useResumeYield(missionId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => labellingApi.startYield(missionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['labelling', missionId] })
+      toast.success('Yield prediction started')
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Failed to start yield prediction')
+    },
+  })
+}

@@ -36,6 +36,11 @@ const DISEASE_OUTPUT_FILES = {
   diseasePredictionStats: "disease_prediction_statistics.json",
 };
 
+const YIELD_OUTPUT_FILES = {
+  yieldPredictionHeatmap: "yield_heatmap.png",
+  yieldPredictionStats: "yield_statistics.json",
+};
+
 const runningLabellingProcesses = new Map<string, ChildProcessWithoutNullStreams>();
 const stoppedLabellingJobs = new Set<string>();
 
@@ -53,6 +58,10 @@ function labellingScriptPath() {
 
 function diseasePredictionScriptPath() {
   return path.resolve(__dirname, "..", "..", "scripts", "disease_prediction.py");
+}
+
+function yieldPredictionScriptPath() {
+  return path.resolve(__dirname, "..", "..", "scripts", "yield_prediction.py");
 }
 
 function publicMapUrl(relativePath: string) {
@@ -79,44 +88,54 @@ function serializeStats(stats: unknown) {
   };
 }
 
-function withoutLabellingDiseaseFallback(stats: unknown) {
+function withoutLabellingModelFallback(stats: unknown) {
   if (!stats || typeof stats !== "object" || Array.isArray(stats)) return stats;
 
   const raw = stats as Record<string, unknown>;
   const visualizations =
     raw.visualizations && typeof raw.visualizations === "object" && !Array.isArray(raw.visualizations)
-      ? raw.visualizations as Record<string, unknown>
+      ? (raw.visualizations as Record<string, unknown>)
       : {};
   const diseasePrediction =
     raw.diseasePrediction && typeof raw.diseasePrediction === "object" && !Array.isArray(raw.diseasePrediction)
-      ? raw.diseasePrediction as Record<string, unknown>
+      ? (raw.diseasePrediction as Record<string, unknown>)
+      : null;
+  const yieldPrediction =
+    raw.yieldPrediction && typeof raw.yieldPrediction === "object" && !Array.isArray(raw.yieldPrediction)
+      ? (raw.yieldPrediction as Record<string, unknown>)
       : null;
 
-  if (
-    !diseasePrediction ||
-    (diseasePrediction.status === "completed" && diseasePrediction.source !== "labelling_fallback")
-  ) {
-    return raw;
-  }
+  let out: Record<string, unknown> = { ...raw, visualizations, diseasePrediction, yieldPrediction };
 
-  return {
-    ...raw,
-    diseasePrediction: {
+  // Preserve existing disease fallback behaviour
+  if (diseasePrediction && (diseasePrediction.status !== "completed" || diseasePrediction.source === "labelling_fallback")) {
+    out.diseasePrediction = {
       ...diseasePrediction,
       status: diseasePrediction.source === "labelling_fallback" ? "skipped" : diseasePrediction.status,
       error:
         diseasePrediction.source === "labelling_fallback"
           ? "Disease prediction was not generated. A trained disease model checkpoint is required."
           : diseasePrediction.error,
-    },
-    visualizations: {
+    };
+    out.visualizations = {
       ...visualizations,
       diseasePredictionMapUrl: null,
       diseasePredictionConfidenceMapUrl: null,
       diseasePredictionNotebookMapUrl: null,
       diseasePredictionGroundTruthMapUrl: null,
-    },
-  };
+    };
+  }
+
+  // Yield fallback: if missing or explicitly skipped, hide yield visualization
+  if (!yieldPrediction || (yieldPrediction.status === "skipped")) {
+    out.yieldPrediction = yieldPrediction || { enabled: false, status: "skipped", error: "YIELD_MODEL_CHECKPOINT is not configured" };
+    out.visualizations = {
+      ...visualizations,
+      yieldPredictionHeatmapUrl: null,
+    };
+  }
+
+  return out;
 }
 
 function serializeJob<T extends {
@@ -131,7 +150,7 @@ function serializeJob<T extends {
     labelMapUrl: job.labelMapUrl ? publicMapUrl(job.labelMapUrl) : null,
     ndviMapUrl: job.ndviMapUrl ? publicMapUrl(job.ndviMapUrl) : null,
     ndreMapUrl: job.ndreMapUrl ? publicMapUrl(job.ndreMapUrl) : null,
-    stats: serializeStats(withoutLabellingDiseaseFallback(job.stats)),
+    stats: serializeStats(withoutLabellingModelFallback(job.stats)),
   };
 }
 
@@ -398,6 +417,64 @@ async function runLabellingJob(
       }
     }
 
+    let yieldPrediction: Record<string, unknown> | null = null;
+    const yieldConfiguredCheckpoint = env.YIELD_MODEL_CHECKPOINT.trim();
+
+    if (!stoppedLabellingJobs.has(jobId)) {
+      if (!yieldConfiguredCheckpoint) {
+        logLabellingJob(jobId, "Yield prediction skipped because YIELD_MODEL_CHECKPOINT is not configured.");
+        yieldPrediction = {
+          enabled: false,
+          status: "skipped",
+          error: "YIELD_MODEL_CHECKPOINT is not configured",
+        };
+      } else {
+        const yieldCheckpointPath = path.resolve(yieldConfiguredCheckpoint);
+        if (!(await fileExists(yieldCheckpointPath))) {
+          logLabellingJob(jobId, `Yield prediction skipped because checkpoint was not found at ${yieldCheckpointPath}.`);
+          yieldPrediction = {
+            enabled: false,
+            status: "skipped",
+            error: `Checkpoint not found at ${yieldCheckpointPath}`,
+          };
+        } else {
+          try {
+            logLabellingJob(jobId, `Starting yield prediction with checkpoint ${yieldCheckpointPath}.`);
+            await executeYieldPredictionScript(
+              jobId,
+              toAbsolutePath(inputRelativePath),
+              yieldCheckpointPath,
+              tempDir,
+              (message) => {
+                if (stoppedLabellingJobs.has(jobId)) return;
+                const progress = progressFromMessage(message);
+                if (progress == null && !/yield prediction/i.test(message)) return;
+                prisma.labellingJob.update({
+                  where: { id: jobId },
+                  data: { stats: progress == null ? { message } : { message, progress } }
+                }).catch(err => logLabellingJobError(jobId, "Could not save yield prediction progress to the database.", err));
+              }
+            );
+
+            const yieldStatsPath = path.join(tempDir, YIELD_OUTPUT_FILES.yieldPredictionStats);
+            yieldPrediction = await fileExists(yieldStatsPath)
+              ? JSON.parse(await fs.promises.readFile(yieldStatsPath, "utf8"))
+              : {
+                  enabled: true,
+                  status: "completed",
+                };
+          } catch (error) {
+            logLabellingJobError(jobId, "Yield prediction failed; keeping labelling outputs available.", error);
+            yieldPrediction = {
+              enabled: true,
+              status: "failed",
+              error: error instanceof Error ? error.message : "Unknown yield prediction error",
+            };
+          }
+        }
+      }
+    }
+
     if (stoppedLabellingJobs.has(jobId)) {
       await prisma.labellingJob.update({
         where: { id: jobId },
@@ -439,10 +516,31 @@ async function runLabellingJob(
       })
     );
 
+    const yieldOutputRelative = Object.fromEntries(
+      Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [
+        key,
+        toRelativePath(path.join(outputDir, filename)),
+      ])
+    ) as Record<keyof typeof YIELD_OUTPUT_FILES, string>;
+
+    const copiedYieldOutputs = new Set<string>();
+    await Promise.all(
+      Object.entries(YIELD_OUTPUT_FILES).map(async ([key, filename]) => {
+        const sourcePath = path.join(tempDir, filename);
+        if (!(await fileExists(sourcePath))) return;
+        await fs.promises.copyFile(
+          sourcePath,
+          toAbsolutePath(yieldOutputRelative[key as keyof typeof YIELD_OUTPUT_FILES])
+        );
+        copiedYieldOutputs.add(key);
+      })
+    );
+
     const statsRaw = await fs.promises.readFile(path.join(tempDir, OUTPUT_FILES.stats), "utf8");
-    const stats = withoutLabellingDiseaseFallback({
+    const stats = withoutLabellingModelFallback({
       ...JSON.parse(statsRaw),
       diseasePrediction,
+      yieldPrediction,
       visualizations: {
         sourceCompositeMapUrl: outputRelative.composite,
         superpixelsMapUrl: outputRelative.superpixels,
@@ -465,6 +563,9 @@ async function runLabellingJob(
         ...(copiedDiseaseOutputs.has("diseasePredictionGroundTruthMap")
           ? { diseasePredictionGroundTruthMapUrl: diseaseOutputRelative.diseasePredictionGroundTruthMap }
           : {}),
+        ...(copiedYieldOutputs?.has("yieldPredictionHeatmap")
+          ? { yieldPredictionHeatmapUrl: yieldOutputRelative.yieldPredictionHeatmap }
+          : {}),
       },
       artifacts: {
         ndviTifUrl: outputRelative.ndviTif,
@@ -478,6 +579,9 @@ async function runLabellingJob(
           : {}),
         ...(copiedDiseaseOutputs.has("diseasePredictionStats")
           ? { diseasePredictionStatsJsonUrl: diseaseOutputRelative.diseasePredictionStats }
+          : {}),
+        ...(copiedYieldOutputs?.has("yieldPredictionStats")
+          ? { yieldPredictionStatsJsonUrl: yieldOutputRelative.yieldPredictionStats }
           : {}),
       },
     }) as Prisma.InputJsonValue;
@@ -555,6 +659,29 @@ function executeDiseasePredictionScript(
   );
 }
 
+function executeYieldPredictionScript(
+  jobId: string,
+  inputTif: string,
+  checkpointPath: string,
+  outputDir: string,
+  onProgress?: (msg: string) => void
+) {
+  return executePythonScript(
+    jobId,
+    [
+      "-u",
+      yieldPredictionScriptPath(),
+      "--input_tif",
+      inputTif,
+      "--checkpoint",
+      checkpointPath,
+      "--output_dir",
+      outputDir,
+    ],
+    onProgress
+  );
+}
+
 function executePythonScript(jobId: string, args: string[], onProgress?: (msg: string) => void) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(env.PYTHON_BIN, args);
@@ -620,4 +747,241 @@ export async function assertMapAccess(relativePath: string, userId: string) {
     throw err;
   }
   return toAbsolutePath(relativePath);
+}
+
+async function runDiseasePredictionOnly(jobId: string, mission: { name: string; project: { name: string } }, inputRelativePath: string) {
+  try {
+    logLabellingJob(jobId, `Resuming disease prediction for mission "${mission.name}".`);
+
+    const missionDir = path.join(
+      env.STORAGE_ROOT,
+      "projects",
+      sanitizeName(mission.project.name),
+      sanitizeName(mission.name)
+    );
+    const outputDir = path.join(missionDir, "labelling", jobId);
+    ensureDir(outputDir);
+
+    const ndviPath = path.join(outputDir, OUTPUT_FILES.ndviTif);
+    const ndrePath = path.join(outputDir, OUTPUT_FILES.ndreTif);
+    const labelsPath = path.join(outputDir, OUTPUT_FILES.labelsTif);
+
+    if (!(await fileExists(ndviPath)) || !(await fileExists(ndrePath)) || !(await fileExists(labelsPath))) {
+      throw new Error("Required labelling outputs (NDVI/NDRE/labels) are not available for this job.");
+    }
+
+    let diseasePrediction: Record<string, unknown> | null = null;
+    const configuredCheckpoint = env.DISEASE_MODEL_CHECKPOINT.trim();
+
+    if (!configuredCheckpoint) {
+      logLabellingJob(jobId, "Disease prediction skipped because DISEASE_MODEL_CHECKPOINT is not configured.");
+      diseasePrediction = { enabled: false, status: "skipped", error: "DISEASE_MODEL_CHECKPOINT is not configured" };
+    } else {
+      const checkpointPath = path.resolve(configuredCheckpoint);
+      if (!(await fileExists(checkpointPath))) {
+        logLabellingJob(jobId, `Disease prediction skipped because checkpoint was not found at ${checkpointPath}.`);
+        diseasePrediction = { enabled: false, status: "skipped", error: `Checkpoint not found at ${checkpointPath}` };
+      } else {
+        try {
+          logLabellingJob(jobId, `Starting disease prediction with checkpoint ${checkpointPath}.`);
+          await executeDiseasePredictionScript(
+            `${jobId}:disease`,
+            toAbsolutePath(inputRelativePath),
+            ndviPath,
+            ndrePath,
+            labelsPath,
+            checkpointPath,
+            outputDir,
+            (message) => {
+              const progress = progressFromMessage(message);
+              if (progress == null && !/disease prediction/i.test(message)) return;
+              prisma.labellingJob.update({ where: { id: jobId }, data: { stats: progress == null ? { message } : { message, progress } } }).catch(err => logLabellingJobError(jobId, "Could not save disease prediction progress to the database.", err));
+            }
+          );
+
+          const diseaseStatsPath = path.join(outputDir, DISEASE_OUTPUT_FILES.diseasePredictionStats);
+          diseasePrediction = await fileExists(diseaseStatsPath)
+            ? JSON.parse(await fs.promises.readFile(diseaseStatsPath, "utf8"))
+            : { enabled: true, status: "completed" };
+        } catch (error) {
+          logLabellingJobError(jobId, "Disease prediction failed; keeping labelling outputs available.", error);
+          diseasePrediction = { enabled: true, status: "failed", error: error instanceof Error ? error.message : "Unknown disease prediction error" };
+        }
+      }
+    }
+
+    // Read existing labelling stats if available
+    const statsPath = path.join(outputDir, OUTPUT_FILES.stats);
+    const dbJob = await prisma.labellingJob.findUnique({ where: { id: jobId } });
+    const baseStats = (await fileExists(statsPath)) ? JSON.parse(await fs.promises.readFile(statsPath, "utf8")) : (dbJob?.stats ?? {});
+
+    const outputRelative = Object.fromEntries(
+      Object.entries(OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])
+    ) as Record<keyof typeof OUTPUT_FILES, string>;
+
+    const diseaseOutputRelative = Object.fromEntries(
+      Object.entries(DISEASE_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])
+    ) as Record<keyof typeof DISEASE_OUTPUT_FILES, string>;
+
+    const copiedDiseaseOutputs = new Set<string>();
+    for (const [key, filename] of Object.entries(DISEASE_OUTPUT_FILES)) {
+      if (await fileExists(path.join(outputDir, filename))) copiedDiseaseOutputs.add(key);
+    }
+
+    const stats = withoutLabellingModelFallback({
+      ...baseStats,
+      diseasePrediction,
+      visualizations: {
+        sourceCompositeMapUrl: outputRelative.composite,
+        superpixelsMapUrl: outputRelative.superpixels,
+        overlayMapUrl: outputRelative.overlay,
+        confidenceMapUrl: outputRelative.confidence,
+        ndviHistogramUrl: outputRelative.ndviHistogram,
+        ndreHistogramUrl: outputRelative.ndreHistogram,
+        classDistributionUrl: outputRelative.classDistribution,
+        classDistributionPieUrl: outputRelative.classDistributionPie,
+        ndviNdreScatterUrl: outputRelative.scatter,
+        ...(copiedDiseaseOutputs.has("diseasePredictionMap") ? { diseasePredictionMapUrl: diseaseOutputRelative.diseasePredictionMap } : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionConfidenceMap") ? { diseasePredictionConfidenceMapUrl: diseaseOutputRelative.diseasePredictionConfidenceMap } : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionNotebookMap") ? { diseasePredictionNotebookMapUrl: diseaseOutputRelative.diseasePredictionNotebookMap } : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionGroundTruthMap") ? { diseasePredictionGroundTruthMapUrl: diseaseOutputRelative.diseasePredictionGroundTruthMap } : {}),
+      },
+      artifacts: {
+        ndviTifUrl: outputRelative.ndviTif,
+        ndreTifUrl: outputRelative.ndreTif,
+        labelsTifUrl: outputRelative.labelsTif,
+        superpixelsTifUrl: outputRelative.superpixelsTif,
+        statisticsJsonUrl: outputRelative.stats,
+        datasetSummaryCsvUrl: outputRelative.summaryCsv,
+        ...(copiedDiseaseOutputs.has("diseasePredictionTif") ? { diseasePredictionTifUrl: diseaseOutputRelative.diseasePredictionTif } : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionStats") ? { diseasePredictionStatsJsonUrl: diseaseOutputRelative.diseasePredictionStats } : {}),
+      },
+    }) as Prisma.InputJsonValue;
+
+    await prisma.labellingJob.update({ where: { id: jobId }, data: { ndviMapUrl: outputRelative.ndvi, ndreMapUrl: outputRelative.ndre, labelMapUrl: outputRelative.labels, stats, status: LabellingJobStatus.COMPLETED } });
+    logLabellingJob(jobId, `Disease prediction resume finished for mission "${mission.name}".`);
+  } catch (error) {
+    logLabellingJobError(jobId, "Disease prediction resume failed.", error);
+    await prisma.labellingJob.update({ where: { id: jobId }, data: { status: LabellingJobStatus.FAILED, stats: { error: error instanceof Error ? error.message : "Unknown error" } } });
+  }
+}
+
+async function runYieldPredictionOnly(jobId: string, mission: { name: string; project: { name: string } }, inputRelativePath: string) {
+  try {
+    logLabellingJob(jobId, `Resuming yield prediction for mission "${mission.name}".`);
+
+    const missionDir = path.join(
+      env.STORAGE_ROOT,
+      "projects",
+      sanitizeName(mission.project.name),
+      sanitizeName(mission.name)
+    );
+    const outputDir = path.join(missionDir, "labelling", jobId);
+    ensureDir(outputDir);
+
+    const configuredCheckpoint = env.YIELD_MODEL_CHECKPOINT.trim();
+
+    let yieldPrediction: Record<string, unknown> | null = null;
+    if (!configuredCheckpoint) {
+      logLabellingJob(jobId, "Yield prediction skipped because YIELD_MODEL_CHECKPOINT is not configured.");
+      yieldPrediction = { enabled: false, status: "skipped", error: "YIELD_MODEL_CHECKPOINT is not configured" };
+    } else {
+      const checkpointPath = path.resolve(configuredCheckpoint);
+      if (!(await fileExists(checkpointPath))) {
+        logLabellingJob(jobId, `Yield prediction skipped because checkpoint was not found at ${checkpointPath}.`);
+        yieldPrediction = { enabled: false, status: "skipped", error: `Checkpoint not found at ${checkpointPath}` };
+      } else {
+        try {
+          logLabellingJob(jobId, `Starting yield prediction with checkpoint ${checkpointPath}.`);
+          await executeYieldPredictionScript(
+            `${jobId}:yield`,
+            toAbsolutePath(inputRelativePath),
+            checkpointPath,
+            outputDir,
+            (message) => {
+              const progress = progressFromMessage(message);
+              if (progress == null && !/yield prediction/i.test(message)) return;
+              prisma.labellingJob.update({ where: { id: jobId }, data: { stats: progress == null ? { message } : { message, progress } } }).catch(err => logLabellingJobError(jobId, "Could not save yield prediction progress to the database.", err));
+            }
+          );
+
+          const yieldStatsPath = path.join(outputDir, YIELD_OUTPUT_FILES.yieldPredictionStats);
+          yieldPrediction = await fileExists(yieldStatsPath) ? JSON.parse(await fs.promises.readFile(yieldStatsPath, "utf8")) : { enabled: true, status: "completed" };
+        } catch (error) {
+          logLabellingJobError(jobId, "Yield prediction failed; keeping labelling outputs available.", error);
+          yieldPrediction = { enabled: true, status: "failed", error: error instanceof Error ? error.message : "Unknown yield prediction error" };
+        }
+      }
+    }
+
+    const statsPath = path.join(outputDir, OUTPUT_FILES.stats);
+    const dbJob2 = await prisma.labellingJob.findUnique({ where: { id: jobId } });
+    const baseStats = (await fileExists(statsPath)) ? JSON.parse(await fs.promises.readFile(statsPath, "utf8")) : (dbJob2?.stats ?? {});
+
+    const outputRelative = Object.fromEntries(Object.entries(OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])) as Record<keyof typeof OUTPUT_FILES, string>;
+    const yieldOutputRelative = Object.fromEntries(Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])) as Record<keyof typeof YIELD_OUTPUT_FILES, string>;
+    const copiedYieldOutputs = new Set<string>();
+    for (const [key, filename] of Object.entries(YIELD_OUTPUT_FILES)) {
+      if (await fileExists(path.join(outputDir, filename))) copiedYieldOutputs.add(key);
+    }
+
+    const stats = withoutLabellingModelFallback({
+      ...baseStats,
+      yieldPrediction,
+      visualizations: {
+        sourceCompositeMapUrl: outputRelative.composite,
+        superpixelsMapUrl: outputRelative.superpixels,
+        overlayMapUrl: outputRelative.overlay,
+        confidenceMapUrl: outputRelative.confidence,
+        ndviHistogramUrl: outputRelative.ndviHistogram,
+        ndreHistogramUrl: outputRelative.ndreHistogram,
+        classDistributionUrl: outputRelative.classDistribution,
+        classDistributionPieUrl: outputRelative.classDistributionPie,
+        ndviNdreScatterUrl: outputRelative.scatter,
+        ...(copiedYieldOutputs.has("yieldPredictionHeatmap") ? { yieldPredictionHeatmapUrl: yieldOutputRelative.yieldPredictionHeatmap } : {}),
+      },
+      artifacts: {
+        ndviTifUrl: outputRelative.ndviTif,
+        ndreTifUrl: outputRelative.ndreTif,
+        labelsTifUrl: outputRelative.labelsTif,
+        superpixelsTifUrl: outputRelative.superpixelsTif,
+        statisticsJsonUrl: outputRelative.stats,
+        datasetSummaryCsvUrl: outputRelative.summaryCsv,
+        ...(copiedYieldOutputs.has("yieldPredictionStats") ? { yieldPredictionStatsJsonUrl: yieldOutputRelative.yieldPredictionStats } : {}),
+      },
+    }) as Prisma.InputJsonValue;
+
+    await prisma.labellingJob.update({ where: { id: jobId }, data: { ndviMapUrl: outputRelative.ndvi, ndreMapUrl: outputRelative.ndre, labelMapUrl: outputRelative.labels, stats, status: LabellingJobStatus.COMPLETED } });
+    logLabellingJob(jobId, `Yield prediction resume finished for mission "${mission.name}".`);
+  } catch (error) {
+    logLabellingJobError(jobId, "Yield prediction resume failed.", error);
+    await prisma.labellingJob.update({ where: { id: jobId }, data: { status: LabellingJobStatus.FAILED, stats: { error: error instanceof Error ? error.message : "Unknown error" } } });
+  }
+}
+
+export async function startDiseasePrediction(missionId: string, userId: string) {
+  const mission = await assertMissionAccess(missionId, userId);
+  const job = await prisma.labellingJob.findFirst({ where: { missionId }, include: { orthomosaic: true }, orderBy: { createdAt: "desc" } });
+  if (!job) {
+    const err = new Error("No labelling job found") as Error & { statusCode: number };
+    err.statusCode = 404;
+    throw err;
+  }
+
+  // start in background
+  void runDiseasePredictionOnly(job.id, mission, job.orthomosaic.relativePath);
+  return serializeJob(job);
+}
+
+export async function startYieldPrediction(missionId: string, userId: string) {
+  const mission = await assertMissionAccess(missionId, userId);
+  const job = await prisma.labellingJob.findFirst({ where: { missionId }, include: { orthomosaic: true }, orderBy: { createdAt: "desc" } });
+  if (!job) {
+    const err = new Error("No labelling job found") as Error & { statusCode: number };
+    err.statusCode = 404;
+    throw err;
+  }
+
+  void runYieldPredictionOnly(job.id, mission, job.orthomosaic.relativePath);
+  return serializeJob(job);
 }
