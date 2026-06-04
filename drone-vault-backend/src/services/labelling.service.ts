@@ -37,8 +37,8 @@ const DISEASE_OUTPUT_FILES = {
 };
 
 const YIELD_OUTPUT_FILES = {
-  yieldPredictionHeatmap: "yield_heatmap.png",
-  yieldPredictionStats: "yield_statistics.json",
+  yieldPredictionHeatmap: "yield_prediction_heatmap.png",
+  yieldPredictionStats: "yield_prediction_statistics.json",
 };
 
 const runningLabellingProcesses = new Map<string, ChildProcessWithoutNullStreams>();
