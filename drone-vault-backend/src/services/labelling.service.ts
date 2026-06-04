@@ -88,6 +88,19 @@ function serializeStats(stats: unknown) {
   };
 }
 
+function mergeProgressStats(existingStats: unknown, message: string, progress?: number) {
+  const base =
+    existingStats && typeof existingStats === "object" && !Array.isArray(existingStats)
+      ? (existingStats as Record<string, unknown>)
+      : {};
+
+  return {
+    ...base,
+    message,
+    ...(progress == null ? {} : { progress }),
+  };
+}
+
 function withoutLabellingModelFallback(stats: unknown) {
   if (!stats || typeof stats !== "object" || Array.isArray(stats)) return stats;
 
@@ -348,10 +361,12 @@ async function runLabellingJob(
         if (stoppedLabellingJobs.has(jobId)) return;
         const progress = progressFromMessage(message);
         if (progress == null && !/Starting multispectral/i.test(message)) return;
-        prisma.labellingJob.update({
-          where: { id: jobId },
-          data: { stats: progress == null ? { message } : { message, progress } }
-        }).catch(err => logLabellingJobError(jobId, "Could not save labelling progress to the database.", err));
+        prisma.labellingJob.findUnique({ where: { id: jobId }, select: { stats: true } })
+          .then(current => prisma.labellingJob.update({
+            where: { id: jobId },
+            data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue }
+          }))
+          .catch(err => logLabellingJobError(jobId, "Could not save labelling progress to the database.", err));
       }
     );
     logLabellingJob(jobId, "Labelling analysis finished. Preparing output files.");
@@ -391,10 +406,12 @@ async function runLabellingJob(
                 if (stoppedLabellingJobs.has(jobId)) return;
                 const progress = progressFromMessage(message);
                 if (progress == null && !/disease prediction/i.test(message)) return;
-                prisma.labellingJob.update({
-                  where: { id: jobId },
-                  data: { stats: progress == null ? { message } : { message, progress } }
-                }).catch(err => logLabellingJobError(jobId, "Could not save disease prediction progress to the database.", err));
+                prisma.labellingJob.findUnique({ where: { id: jobId }, select: { stats: true } })
+                  .then(current => prisma.labellingJob.update({
+                    where: { id: jobId },
+                    data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue }
+                  }))
+                  .catch(err => logLabellingJobError(jobId, "Could not save disease prediction progress to the database.", err));
               }
             );
 
@@ -449,10 +466,12 @@ async function runLabellingJob(
                 if (stoppedLabellingJobs.has(jobId)) return;
                 const progress = progressFromMessage(message);
                 if (progress == null && !/yield prediction/i.test(message)) return;
-                prisma.labellingJob.update({
-                  where: { id: jobId },
-                  data: { stats: progress == null ? { message } : { message, progress } }
-                }).catch(err => logLabellingJobError(jobId, "Could not save yield prediction progress to the database.", err));
+                prisma.labellingJob.findUnique({ where: { id: jobId }, select: { stats: true } })
+                  .then(current => prisma.labellingJob.update({
+                    where: { id: jobId },
+                    data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue }
+                  }))
+                  .catch(err => logLabellingJobError(jobId, "Could not save yield prediction progress to the database.", err));
               }
             );
 
@@ -795,7 +814,12 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
             (message) => {
               const progress = progressFromMessage(message);
               if (progress == null && !/disease prediction/i.test(message)) return;
-              prisma.labellingJob.update({ where: { id: jobId }, data: { stats: progress == null ? { message } : { message, progress } } }).catch(err => logLabellingJobError(jobId, "Could not save disease prediction progress to the database.", err));
+              prisma.labellingJob.findUnique({ where: { id: jobId }, select: { stats: true } })
+                .then(current => prisma.labellingJob.update({
+                  where: { id: jobId },
+                  data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue },
+                }))
+                .catch(err => logLabellingJobError(jobId, "Could not save disease prediction progress to the database.", err));
             }
           );
 
@@ -921,7 +945,12 @@ async function runYieldPredictionOnly(jobId: string, mission: { name: string; pr
             (message) => {
               const progress = progressFromMessage(message);
               if (progress == null && !/yield prediction/i.test(message)) return;
-              prisma.labellingJob.update({ where: { id: jobId }, data: { stats: progress == null ? { message } : { message, progress } } }).catch(err => logLabellingJobError(jobId, "Could not save yield prediction progress to the database.", err));
+              prisma.labellingJob.findUnique({ where: { id: jobId }, select: { stats: true } })
+                .then(current => prisma.labellingJob.update({
+                  where: { id: jobId },
+                  data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue },
+                }))
+                .catch(err => logLabellingJobError(jobId, "Could not save yield prediction progress to the database.", err));
             }
           );
 
@@ -1015,7 +1044,10 @@ export async function startDiseasePrediction(missionId: string, userId: string) 
   // Set PROCESSING so the frontend's refetchInterval kicks in and polls for completion
   const updatedJob = await prisma.labellingJob.update({
     where: { id: job.id },
-    data: { status: LabellingJobStatus.PROCESSING, stats: { message: "Starting disease prediction..." } },
+    data: {
+      status: LabellingJobStatus.PROCESSING,
+      stats: mergeProgressStats(job.stats, "Starting disease prediction...") as Prisma.InputJsonValue,
+    },
     include: { orthomosaic: true },
   });
   void runDiseasePredictionOnly(job.id, mission, job.orthomosaic.relativePath);
@@ -1034,7 +1066,10 @@ export async function startYieldPrediction(missionId: string, userId: string) {
   // Set PROCESSING so the frontend's refetchInterval kicks in and polls for completion
   const updatedJob = await prisma.labellingJob.update({
     where: { id: job.id },
-    data: { status: LabellingJobStatus.PROCESSING, stats: { message: "Starting yield prediction..." } },
+    data: {
+      status: LabellingJobStatus.PROCESSING,
+      stats: mergeProgressStats(job.stats, "Starting yield prediction...") as Prisma.InputJsonValue,
+    },
     include: { orthomosaic: true },
   });
   void runYieldPredictionOnly(job.id, mission, job.orthomosaic.relativePath);

@@ -117,7 +117,7 @@ export function YieldPredictionPanel({ missionId, orthomosaics }: Props) {
           description={yieldStats?.error || 'No yield prediction outputs were generated for this mission.'}
         />
         <div className="mt-3 flex justify-center">
-          <Button loading={resume.isLoading} onClick={() => resume.mutate()}>
+          <Button loading={resume.isPending} onClick={() => resume.mutate()}>
             Retry yield prediction
           </Button>
         </div>
@@ -133,7 +133,7 @@ export function YieldPredictionPanel({ missionId, orthomosaics }: Props) {
           {yieldStats.error || 'The yield prediction step failed unexpectedly.'}
         </div>
         <div className="mt-4 flex justify-center">
-          <Button loading={resume.isLoading} onClick={() => resume.mutate()}>
+          <Button loading={resume.isPending} onClick={() => resume.mutate()}>
             Retry yield prediction
           </Button>
         </div>

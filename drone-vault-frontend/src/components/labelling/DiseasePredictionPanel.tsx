@@ -298,7 +298,7 @@ export function DiseasePredictionPanel({ missionId, orthomosaics }: Props) {
           description={diseaseStats?.error || 'No disease prediction outputs were generated for this mission.'}
         />
         <div className="mt-3 flex justify-center">
-          <Button loading={resume.isLoading} onClick={() => resume.mutate()}>
+          <Button loading={resume.isPending} onClick={() => resume.mutate()}>
             Retry disease prediction
           </Button>
         </div>
@@ -314,7 +314,7 @@ export function DiseasePredictionPanel({ missionId, orthomosaics }: Props) {
           {diseaseStats.error || 'The disease prediction step failed unexpectedly.'}
         </div>
         <div className="mt-4 flex justify-center">
-          <Button loading={resume.isLoading} onClick={() => resume.mutate()}>
+          <Button loading={resume.isPending} onClick={() => resume.mutate()}>
             Retry disease prediction
           </Button>
         </div>
