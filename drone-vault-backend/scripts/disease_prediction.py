@@ -236,12 +236,14 @@ def process(args: argparse.Namespace) -> None:
     if in_chans != image.shape[0]:
         raise ValueError(f"Checkpoint expects {in_chans} input channels, but prepared image has {image.shape[0]}")
 
-        model = create_model(
-                "maxvit_tiny_tf_224",
-                pretrained=False,
-                in_chans=7,
-                num_classes=5,
-        )
+    # Instantiate model from checkpoint metadata and then load weights
+    model_name = checkpoint.get("model_name", "maxvit_tiny_tf_224")
+    model = create_model(
+        model_name,
+        pretrained=False,
+        in_chans=in_chans,
+        num_classes=num_classes,
+    )
 
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
