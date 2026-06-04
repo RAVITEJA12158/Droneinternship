@@ -64,6 +64,14 @@ function yieldPredictionScriptPath() {
   return path.resolve(__dirname, "..", "..", "scripts", "yield_prediction.py");
 }
 
+function getMissionOutputDirs(missionDir: string, jobId: string) {
+  return {
+    labellingDir: path.join(missionDir, "labelling", jobId),
+    diseaseDir: path.join(missionDir, "disease", jobId),
+    yieldDir: path.join(missionDir, "yield", jobId),
+  };
+}
+
 function publicMapUrl(relativePath: string) {
   return `/api/labelling/maps?path=${encodeURIComponent(relativePath)}`;
 }
@@ -348,9 +356,11 @@ async function runLabellingJob(
       sanitizeName(mission.name)
     );
     const tempDir = path.join(env.STORAGE_ROOT, "temp", "labelling", jobId);
-    const outputDir = path.join(missionDir, "labelling", jobId);
+    const { labellingDir, diseaseDir, yieldDir } = getMissionOutputDirs(missionDir, jobId);
     ensureDir(tempDir);
-    ensureDir(outputDir);
+    ensureDir(labellingDir);
+    ensureDir(diseaseDir);
+    ensureDir(yieldDir);
 
     logLabellingJob(jobId, `Starting multispectral labelling from ${inputRelativePath}.`);
     await executeLabellingScript(
@@ -505,14 +515,14 @@ async function runLabellingJob(
     const outputRelative = Object.fromEntries(
       Object.entries(OUTPUT_FILES).map(([key, filename]) => [
         key,
-        toRelativePath(path.join(outputDir, filename)),
+        toRelativePath(path.join(labellingDir, filename)),
       ])
     ) as Record<keyof typeof OUTPUT_FILES, string>;
 
     const diseaseOutputRelative = Object.fromEntries(
       Object.entries(DISEASE_OUTPUT_FILES).map(([key, filename]) => [
         key,
-        toRelativePath(path.join(outputDir, filename)),
+        toRelativePath(path.join(diseaseDir, filename)),
       ])
     ) as Record<keyof typeof DISEASE_OUTPUT_FILES, string>;
 
@@ -538,7 +548,7 @@ async function runLabellingJob(
     const yieldOutputRelative = Object.fromEntries(
       Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [
         key,
-        toRelativePath(path.join(outputDir, filename)),
+        toRelativePath(path.join(yieldDir, filename)),
       ])
     ) as Record<keyof typeof YIELD_OUTPUT_FILES, string>;
 
@@ -757,7 +767,11 @@ export async function assertMapAccess(relativePath: string, userId: string) {
       return true;
     }
 
-    return normalizedPath.includes(`/labelling/${job.id}/`);
+    return (
+      normalizedPath.includes(`/labelling/${job.id}/`) ||
+      normalizedPath.includes(`/disease/${job.id}/`) ||
+      normalizedPath.includes(`/yield/${job.id}/`)
+    );
   });
 
   if (!hasAccess) {
@@ -778,12 +792,12 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
       sanitizeName(mission.project.name),
       sanitizeName(mission.name)
     );
-    const outputDir = path.join(missionDir, "labelling", jobId);
-    ensureDir(outputDir);
+    const { labellingDir, diseaseDir, yieldDir } = getMissionOutputDirs(missionDir, jobId);
+    ensureDir(diseaseDir);
 
-    const ndviPath = path.join(outputDir, OUTPUT_FILES.ndviTif);
-    const ndrePath = path.join(outputDir, OUTPUT_FILES.ndreTif);
-    const labelsPath = path.join(outputDir, OUTPUT_FILES.labelsTif);
+    const ndviPath = path.join(labellingDir, OUTPUT_FILES.ndviTif);
+    const ndrePath = path.join(labellingDir, OUTPUT_FILES.ndreTif);
+    const labelsPath = path.join(labellingDir, OUTPUT_FILES.labelsTif);
 
     if (!(await fileExists(ndviPath)) || !(await fileExists(ndrePath)) || !(await fileExists(labelsPath))) {
       throw new Error("Required labelling outputs (NDVI/NDRE/labels) are not available for this job.");
@@ -810,7 +824,7 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
             ndrePath,
             labelsPath,
             checkpointPath,
-            outputDir,
+            diseaseDir,
             (message) => {
               const progress = progressFromMessage(message);
               if (progress == null && !/disease prediction/i.test(message)) return;
@@ -823,7 +837,7 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
             }
           );
 
-          const diseaseStatsPath = path.join(outputDir, DISEASE_OUTPUT_FILES.diseasePredictionStats);
+          const diseaseStatsPath = path.join(diseaseDir, DISEASE_OUTPUT_FILES.diseasePredictionStats);
           diseasePrediction = await fileExists(diseaseStatsPath)
             ? JSON.parse(await fs.promises.readFile(diseaseStatsPath, "utf8"))
             : { enabled: true, status: "completed" };
@@ -836,35 +850,35 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
 
     // Always read base stats from the file on disk — the DB copy has already been transformed
     // by serializeStats (relative paths → public URLs) and cannot be safely re-merged.
-    const statsPath = path.join(outputDir, OUTPUT_FILES.stats);
+    const statsPath = path.join(labellingDir, OUTPUT_FILES.stats);
     const baseStats = (await fileExists(statsPath))
       ? JSON.parse(await fs.promises.readFile(statsPath, "utf8"))
       : {};
 
     const outputRelative = Object.fromEntries(
-      Object.entries(OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])
+      Object.entries(OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(labellingDir, filename))])
     ) as Record<keyof typeof OUTPUT_FILES, string>;
 
     const diseaseOutputRelative = Object.fromEntries(
-      Object.entries(DISEASE_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])
+      Object.entries(DISEASE_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(diseaseDir, filename))])
     ) as Record<keyof typeof DISEASE_OUTPUT_FILES, string>;
 
     const copiedDiseaseOutputs = new Set<string>();
     for (const [key, filename] of Object.entries(DISEASE_OUTPUT_FILES)) {
-      if (await fileExists(path.join(outputDir, filename))) copiedDiseaseOutputs.add(key);
+      if (await fileExists(path.join(diseaseDir, filename))) copiedDiseaseOutputs.add(key);
     }
 
     // Preserve any existing yield prediction outputs so they aren't lost when disease re-runs
     const yieldOutputRelative = Object.fromEntries(
-      Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])
+      Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(yieldDir, filename))])
     ) as Record<keyof typeof YIELD_OUTPUT_FILES, string>;
 
     const copiedYieldOutputs = new Set<string>();
     for (const [key, filename] of Object.entries(YIELD_OUTPUT_FILES)) {
-      if (await fileExists(path.join(outputDir, filename))) copiedYieldOutputs.add(key);
+      if (await fileExists(path.join(yieldDir, filename))) copiedYieldOutputs.add(key);
     }
 
-    const yieldStatsPath = path.join(outputDir, YIELD_OUTPUT_FILES.yieldPredictionStats);
+    const yieldStatsPath = path.join(yieldDir, YIELD_OUTPUT_FILES.yieldPredictionStats);
     const existingYieldPrediction = (await fileExists(yieldStatsPath))
       ? JSON.parse(await fs.promises.readFile(yieldStatsPath, "utf8"))
       : (baseStats.yieldPrediction ?? null);
@@ -920,8 +934,8 @@ async function runYieldPredictionOnly(jobId: string, mission: { name: string; pr
       sanitizeName(mission.project.name),
       sanitizeName(mission.name)
     );
-    const outputDir = path.join(missionDir, "labelling", jobId);
-    ensureDir(outputDir);
+    const { labellingDir, diseaseDir, yieldDir } = getMissionOutputDirs(missionDir, jobId);
+    ensureDir(yieldDir);
 
     const configuredCheckpoint = env.YIELD_MODEL_CHECKPOINT.trim();
 
@@ -941,7 +955,7 @@ async function runYieldPredictionOnly(jobId: string, mission: { name: string; pr
             `${jobId}:yield`,
             toAbsolutePath(inputRelativePath),
             checkpointPath,
-            outputDir,
+            yieldDir,
             (message) => {
               const progress = progressFromMessage(message);
               if (progress == null && !/yield prediction/i.test(message)) return;
@@ -954,7 +968,7 @@ async function runYieldPredictionOnly(jobId: string, mission: { name: string; pr
             }
           );
 
-          const yieldStatsPath = path.join(outputDir, YIELD_OUTPUT_FILES.yieldPredictionStats);
+          const yieldStatsPath = path.join(yieldDir, YIELD_OUTPUT_FILES.yieldPredictionStats);
           yieldPrediction = await fileExists(yieldStatsPath) ? JSON.parse(await fs.promises.readFile(yieldStatsPath, "utf8")) : { enabled: true, status: "completed" };
         } catch (error) {
           logLabellingJobError(jobId, "Yield prediction failed; keeping labelling outputs available.", error);
@@ -963,30 +977,30 @@ async function runYieldPredictionOnly(jobId: string, mission: { name: string; pr
       }
     }
 
-    const statsPath = path.join(outputDir, OUTPUT_FILES.stats);
+    const statsPath = path.join(labellingDir, OUTPUT_FILES.stats);
     // Always read from file — DB stats are already serialized with public URLs
     const baseStats = (await fileExists(statsPath))
       ? JSON.parse(await fs.promises.readFile(statsPath, "utf8"))
       : {};
 
-    const outputRelative = Object.fromEntries(Object.entries(OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])) as Record<keyof typeof OUTPUT_FILES, string>;
-    const yieldOutputRelative = Object.fromEntries(Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])) as Record<keyof typeof YIELD_OUTPUT_FILES, string>;
+    const outputRelative = Object.fromEntries(Object.entries(OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(labellingDir, filename))])) as Record<keyof typeof OUTPUT_FILES, string>;
+    const yieldOutputRelative = Object.fromEntries(Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(yieldDir, filename))])) as Record<keyof typeof YIELD_OUTPUT_FILES, string>;
     const copiedYieldOutputs = new Set<string>();
     for (const [key, filename] of Object.entries(YIELD_OUTPUT_FILES)) {
-      if (await fileExists(path.join(outputDir, filename))) copiedYieldOutputs.add(key);
+      if (await fileExists(path.join(yieldDir, filename))) copiedYieldOutputs.add(key);
     }
 
     // Preserve any existing disease prediction outputs so they aren't lost when yield re-runs
     const diseaseOutputRelative = Object.fromEntries(
-      Object.entries(DISEASE_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])
+      Object.entries(DISEASE_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(diseaseDir, filename))])
     ) as Record<keyof typeof DISEASE_OUTPUT_FILES, string>;
 
     const copiedDiseaseOutputs = new Set<string>();
     for (const [key, filename] of Object.entries(DISEASE_OUTPUT_FILES)) {
-      if (await fileExists(path.join(outputDir, filename))) copiedDiseaseOutputs.add(key);
+      if (await fileExists(path.join(diseaseDir, filename))) copiedDiseaseOutputs.add(key);
     }
 
-    const diseaseStatsPath = path.join(outputDir, DISEASE_OUTPUT_FILES.diseasePredictionStats);
+    const diseaseStatsPath = path.join(diseaseDir, DISEASE_OUTPUT_FILES.diseasePredictionStats);
     const existingDiseasePrediction = (await fileExists(diseaseStatsPath))
       ? JSON.parse(await fs.promises.readFile(diseaseStatsPath, "utf8"))
       : (baseStats.diseasePrediction ?? null);

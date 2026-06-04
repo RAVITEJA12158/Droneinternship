@@ -99,7 +99,7 @@ class MaxVitClassifier(nn.Module):
         self.seg_head = nn.Linear(feature_dim, num_classes)
     The checkpoint keys are prefixed with 'backbone.' and 'seg_head.'.
     """
-    def __init__(self, in_chans: int, num_classes: int) -> None:
+    def __init__(self, in_chans: int, num_classes: int, head_kind: str = "linear") -> None:
         super().__init__()
         self.backbone = create_model(
             MODEL_NAME,
@@ -107,10 +107,24 @@ class MaxVitClassifier(nn.Module):
             in_chans=in_chans,
             num_classes=0,  # remove built-in head → outputs feature vector
         )
-        self.seg_head = nn.Linear(self.backbone.num_features, num_classes)
+        self.head_kind = head_kind
+        if head_kind == "conv":
+            self.seg_head = nn.Conv2d(self.backbone.num_features, num_classes, kernel_size=1)
+        else:
+            self.seg_head = nn.Linear(self.backbone.num_features, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.seg_head(self.backbone(x))
+        if self.head_kind != "conv":
+            return self.seg_head(self.backbone(x))
+
+        features = self.backbone.forward_features(x)
+        if features.ndim == 2:
+            features = features[:, :, None, None]
+        elif features.ndim == 4 and features.shape[1] != self.backbone.num_features:
+            features = features.permute(0, 3, 1, 2).contiguous()
+
+        logits = self.seg_head(features)
+        return nn.functional.interpolate(logits, size=x.shape[-2:], mode="bilinear", align_corners=False)
 
 
 def load_checkpoint(path: str, device):
@@ -125,6 +139,7 @@ def load_checkpoint(path: str, device):
         # Detect num_classes from seg_head weight shape  (num_classes, features)
         head_key = "seg_head.weight"
         num_classes = int(raw_sd[head_key].shape[0]) if head_key in raw_sd else 5
+        head_kind = "conv" if head_key in raw_sd and len(raw_sd[head_key].shape) == 4 else "linear"
         return {
             "model_name": MODEL_NAME,
             "model_state_dict": raw_sd,
@@ -132,6 +147,7 @@ def load_checkpoint(path: str, device):
             "label_map": {i: i for i in range(num_classes)},
             "in_chans": in_chans,
             "patch_size": 224,
+            "head_kind": head_kind,
         }
 
     # Wrapped dict — enforce MaxViT and auto-detect shape metadata
@@ -140,10 +156,12 @@ def load_checkpoint(path: str, device):
     head_key = "seg_head.weight"
     in_chans = int(sd[stem_key].shape[1]) if stem_key in sd else int(ckpt.get("in_chans", 7))
     num_classes = int(sd[head_key].shape[0]) if head_key in sd else int(ckpt.get("num_classes", 5))
+    head_kind = "conv" if head_key in sd and len(sd[head_key].shape) == 4 else str(ckpt.get("head_kind", "linear"))
 
     ckpt["model_name"] = MODEL_NAME
     ckpt["in_chans"] = in_chans
     ckpt["num_classes"] = num_classes
+    ckpt["head_kind"] = head_kind
     if "label_map" not in ckpt:
         ckpt["label_map"] = {i: i for i in range(num_classes)}
     return ckpt
@@ -276,7 +294,11 @@ def process(args: argparse.Namespace) -> None:
         raise ValueError(f"Checkpoint expects {in_chans} input channels, but prepared image has {image.shape[0]}")
 
     # Build the wrapper that matches the checkpoint (backbone + seg_head)
-    model = MaxVitClassifier(in_chans=in_chans, num_classes=num_classes).to(device)
+    model = MaxVitClassifier(
+        in_chans=in_chans,
+        num_classes=num_classes,
+        head_kind=str(checkpoint.get("head_kind", "linear")),
+    ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 

@@ -1,5 +1,6 @@
 import argparse
 import json
+import numbers
 import os
 from typing import Dict, List, Tuple
 
@@ -96,7 +97,7 @@ def load_model(checkpoint_path: str, max_channels: int, device: torch.device) ->
     if isinstance(checkpoint, dict):
         for key in ("mae", "rmse", "r2"):
             value = checkpoint.get(key)
-            if isinstance(value, (int, float)):
+            if isinstance(value, numbers.Real):
                 metrics[key] = float(value)
 
     return model, metrics
@@ -113,6 +114,34 @@ def save_heatmap(heatmap: np.ndarray, output_path: str, title: str) -> None:
     plt.close()
 
 
+def save_results_report(output_path: str, metrics: Dict[str, float], field_results: List[Dict[str, float | str | None]]) -> None:
+    lines = [
+        "==============================",
+        "      MODEL RESULTS",
+        "==============================",
+        "",
+        "Accuracy Metrics:",
+        f"MAE  : {metrics.get('mae', 0.0):.4f}" if "mae" in metrics else "MAE  : N/A",
+        f"RMSE : {metrics.get('rmse', 0.0):.4f}" if "rmse" in metrics else "RMSE : N/A",
+        f"R2   : {metrics.get('r2', 0.0):.4f}" if "r2" in metrics else "R2   : N/A",
+        "",
+        "Field-wise Results:",
+        "",
+    ]
+
+    for result in field_results:
+        ground_truth = result.get("ground_truth_yield_tonnes")
+        lines.extend([
+            str(result["field_name"]),
+            f"Predicted Yield : {float(result['predicted_yield_tonnes']):.2f} tonnes",
+            f"Ground Truth    : {float(ground_truth):.2f} tonnes" if isinstance(ground_truth, numbers.Real) else "Ground Truth    : N/A",
+            "----------------------------------------",
+        ])
+
+    with open(output_path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run ViT yield prediction for a multispectral orthomosaic.")
     parser.add_argument("--input_tif", required=True)
@@ -123,6 +152,8 @@ def main() -> None:
     parser.add_argument("--max_channels", type=int, default=10)
     parser.add_argument("--ndvi_threshold", type=float, default=0.2)
     parser.add_argument("--yield_scale", type=float, default=20.0)
+    parser.add_argument("--field_name", default=None)
+    parser.add_argument("--ground_truth_yield", type=float, default=None)
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -167,9 +198,19 @@ def main() -> None:
     prediction = float(np.mean(predictions))
     heatmap_path = os.path.join(args.output_dir, "yield_prediction_heatmap.png")
     stats_path = os.path.join(args.output_dir, "yield_prediction_statistics.json")
+    report_path = os.path.join(args.output_dir, "yield_prediction_results.txt")
+    field_name = args.field_name or os.path.splitext(os.path.basename(args.input_tif))[0]
+    field_results = [
+        {
+            "field_name": field_name,
+            "predicted_yield_tonnes": prediction,
+            "ground_truth_yield_tonnes": args.ground_truth_yield,
+        }
+    ]
 
     log_step("5/5", "Saving yield prediction outputs")
     save_heatmap(heatmap, heatmap_path, f"Predicted yield: {prediction:.2f} tonnes")
+    save_results_report(report_path, metrics, field_results)
 
     stats = {
         "enabled": True,
@@ -190,6 +231,8 @@ def main() -> None:
         "max_patch_yield_tonnes": float(np.max(predictions)),
         "mean_patch_yield_tonnes": prediction,
         "metrics": metrics,
+        "field_results": field_results,
+        "results_report": os.path.basename(report_path),
     }
 
     with open(stats_path, "w", encoding="utf-8") as f:
