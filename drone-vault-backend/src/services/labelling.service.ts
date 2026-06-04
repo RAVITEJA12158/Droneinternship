@@ -810,10 +810,12 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
       }
     }
 
-    // Read existing labelling stats if available
+    // Always read base stats from the file on disk — the DB copy has already been transformed
+    // by serializeStats (relative paths → public URLs) and cannot be safely re-merged.
     const statsPath = path.join(outputDir, OUTPUT_FILES.stats);
-    const dbJob = await prisma.labellingJob.findUnique({ where: { id: jobId } });
-    const baseStats = (await fileExists(statsPath)) ? JSON.parse(await fs.promises.readFile(statsPath, "utf8")) : (dbJob?.stats ?? {});
+    const baseStats = (await fileExists(statsPath))
+      ? JSON.parse(await fs.promises.readFile(statsPath, "utf8"))
+      : {};
 
     const outputRelative = Object.fromEntries(
       Object.entries(OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])
@@ -828,9 +830,25 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
       if (await fileExists(path.join(outputDir, filename))) copiedDiseaseOutputs.add(key);
     }
 
+    // Preserve any existing yield prediction outputs so they aren't lost when disease re-runs
+    const yieldOutputRelative = Object.fromEntries(
+      Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])
+    ) as Record<keyof typeof YIELD_OUTPUT_FILES, string>;
+
+    const copiedYieldOutputs = new Set<string>();
+    for (const [key, filename] of Object.entries(YIELD_OUTPUT_FILES)) {
+      if (await fileExists(path.join(outputDir, filename))) copiedYieldOutputs.add(key);
+    }
+
+    const yieldStatsPath = path.join(outputDir, YIELD_OUTPUT_FILES.yieldPredictionStats);
+    const existingYieldPrediction = (await fileExists(yieldStatsPath))
+      ? JSON.parse(await fs.promises.readFile(yieldStatsPath, "utf8"))
+      : (baseStats.yieldPrediction ?? null);
+
     const stats = withoutLabellingModelFallback({
       ...baseStats,
       diseasePrediction,
+      yieldPrediction: existingYieldPrediction,
       visualizations: {
         sourceCompositeMapUrl: outputRelative.composite,
         superpixelsMapUrl: outputRelative.superpixels,
@@ -845,6 +863,7 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
         ...(copiedDiseaseOutputs.has("diseasePredictionConfidenceMap") ? { diseasePredictionConfidenceMapUrl: diseaseOutputRelative.diseasePredictionConfidenceMap } : {}),
         ...(copiedDiseaseOutputs.has("diseasePredictionNotebookMap") ? { diseasePredictionNotebookMapUrl: diseaseOutputRelative.diseasePredictionNotebookMap } : {}),
         ...(copiedDiseaseOutputs.has("diseasePredictionGroundTruthMap") ? { diseasePredictionGroundTruthMapUrl: diseaseOutputRelative.diseasePredictionGroundTruthMap } : {}),
+        ...(copiedYieldOutputs.has("yieldPredictionHeatmap") ? { yieldPredictionHeatmapUrl: yieldOutputRelative.yieldPredictionHeatmap } : {}),
       },
       artifacts: {
         ndviTifUrl: outputRelative.ndviTif,
@@ -855,6 +874,7 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
         datasetSummaryCsvUrl: outputRelative.summaryCsv,
         ...(copiedDiseaseOutputs.has("diseasePredictionTif") ? { diseasePredictionTifUrl: diseaseOutputRelative.diseasePredictionTif } : {}),
         ...(copiedDiseaseOutputs.has("diseasePredictionStats") ? { diseasePredictionStatsJsonUrl: diseaseOutputRelative.diseasePredictionStats } : {}),
+        ...(copiedYieldOutputs.has("yieldPredictionStats") ? { yieldPredictionStatsJsonUrl: yieldOutputRelative.yieldPredictionStats } : {}),
       },
     }) as Prisma.InputJsonValue;
 
@@ -915,8 +935,10 @@ async function runYieldPredictionOnly(jobId: string, mission: { name: string; pr
     }
 
     const statsPath = path.join(outputDir, OUTPUT_FILES.stats);
-    const dbJob2 = await prisma.labellingJob.findUnique({ where: { id: jobId } });
-    const baseStats = (await fileExists(statsPath)) ? JSON.parse(await fs.promises.readFile(statsPath, "utf8")) : (dbJob2?.stats ?? {});
+    // Always read from file — DB stats are already serialized with public URLs
+    const baseStats = (await fileExists(statsPath))
+      ? JSON.parse(await fs.promises.readFile(statsPath, "utf8"))
+      : {};
 
     const outputRelative = Object.fromEntries(Object.entries(OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])) as Record<keyof typeof OUTPUT_FILES, string>;
     const yieldOutputRelative = Object.fromEntries(Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])) as Record<keyof typeof YIELD_OUTPUT_FILES, string>;
@@ -925,9 +947,25 @@ async function runYieldPredictionOnly(jobId: string, mission: { name: string; pr
       if (await fileExists(path.join(outputDir, filename))) copiedYieldOutputs.add(key);
     }
 
+    // Preserve any existing disease prediction outputs so they aren't lost when yield re-runs
+    const diseaseOutputRelative = Object.fromEntries(
+      Object.entries(DISEASE_OUTPUT_FILES).map(([key, filename]) => [key, toRelativePath(path.join(outputDir, filename))])
+    ) as Record<keyof typeof DISEASE_OUTPUT_FILES, string>;
+
+    const copiedDiseaseOutputs = new Set<string>();
+    for (const [key, filename] of Object.entries(DISEASE_OUTPUT_FILES)) {
+      if (await fileExists(path.join(outputDir, filename))) copiedDiseaseOutputs.add(key);
+    }
+
+    const diseaseStatsPath = path.join(outputDir, DISEASE_OUTPUT_FILES.diseasePredictionStats);
+    const existingDiseasePrediction = (await fileExists(diseaseStatsPath))
+      ? JSON.parse(await fs.promises.readFile(diseaseStatsPath, "utf8"))
+      : (baseStats.diseasePrediction ?? null);
+
     const stats = withoutLabellingModelFallback({
       ...baseStats,
       yieldPrediction,
+      diseasePrediction: existingDiseasePrediction,
       visualizations: {
         sourceCompositeMapUrl: outputRelative.composite,
         superpixelsMapUrl: outputRelative.superpixels,
@@ -938,6 +976,10 @@ async function runYieldPredictionOnly(jobId: string, mission: { name: string; pr
         classDistributionUrl: outputRelative.classDistribution,
         classDistributionPieUrl: outputRelative.classDistributionPie,
         ndviNdreScatterUrl: outputRelative.scatter,
+        ...(copiedDiseaseOutputs.has("diseasePredictionMap") ? { diseasePredictionMapUrl: diseaseOutputRelative.diseasePredictionMap } : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionConfidenceMap") ? { diseasePredictionConfidenceMapUrl: diseaseOutputRelative.diseasePredictionConfidenceMap } : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionNotebookMap") ? { diseasePredictionNotebookMapUrl: diseaseOutputRelative.diseasePredictionNotebookMap } : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionGroundTruthMap") ? { diseasePredictionGroundTruthMapUrl: diseaseOutputRelative.diseasePredictionGroundTruthMap } : {}),
         ...(copiedYieldOutputs.has("yieldPredictionHeatmap") ? { yieldPredictionHeatmapUrl: yieldOutputRelative.yieldPredictionHeatmap } : {}),
       },
       artifacts: {
@@ -947,6 +989,8 @@ async function runYieldPredictionOnly(jobId: string, mission: { name: string; pr
         superpixelsTifUrl: outputRelative.superpixelsTif,
         statisticsJsonUrl: outputRelative.stats,
         datasetSummaryCsvUrl: outputRelative.summaryCsv,
+        ...(copiedDiseaseOutputs.has("diseasePredictionTif") ? { diseasePredictionTifUrl: diseaseOutputRelative.diseasePredictionTif } : {}),
+        ...(copiedDiseaseOutputs.has("diseasePredictionStats") ? { diseasePredictionStatsJsonUrl: diseaseOutputRelative.diseasePredictionStats } : {}),
         ...(copiedYieldOutputs.has("yieldPredictionStats") ? { yieldPredictionStatsJsonUrl: yieldOutputRelative.yieldPredictionStats } : {}),
       },
     }) as Prisma.InputJsonValue;
@@ -968,9 +1012,14 @@ export async function startDiseasePrediction(missionId: string, userId: string) 
     throw err;
   }
 
-  // start in background
+  // Set PROCESSING so the frontend's refetchInterval kicks in and polls for completion
+  const updatedJob = await prisma.labellingJob.update({
+    where: { id: job.id },
+    data: { status: LabellingJobStatus.PROCESSING, stats: { message: "Starting disease prediction..." } },
+    include: { orthomosaic: true },
+  });
   void runDiseasePredictionOnly(job.id, mission, job.orthomosaic.relativePath);
-  return serializeJob(job);
+  return serializeJob(updatedJob);
 }
 
 export async function startYieldPrediction(missionId: string, userId: string) {
@@ -982,6 +1031,12 @@ export async function startYieldPrediction(missionId: string, userId: string) {
     throw err;
   }
 
+  // Set PROCESSING so the frontend's refetchInterval kicks in and polls for completion
+  const updatedJob = await prisma.labellingJob.update({
+    where: { id: job.id },
+    data: { status: LabellingJobStatus.PROCESSING, stats: { message: "Starting yield prediction..." } },
+    include: { orthomosaic: true },
+  });
   void runYieldPredictionOnly(job.id, mission, job.orthomosaic.relativePath);
-  return serializeJob(job);
+  return serializeJob(updatedJob);
 }

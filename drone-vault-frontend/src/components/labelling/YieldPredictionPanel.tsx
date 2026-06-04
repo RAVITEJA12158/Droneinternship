@@ -54,6 +54,7 @@ function ArtifactLink({ label, href }: { label: string; href?: string | null }) 
 
 export function YieldPredictionPanel({ missionId, orthomosaics }: Props) {
   const { data: job, isLoading, isError } = useLabelling(missionId)
+  const resume = useResumeYield(missionId)
   const [zoom, setZoom] = useState(1)
   const [isFullScreen, setIsFullScreen] = useState(false)
 
@@ -107,7 +108,6 @@ export function YieldPredictionPanel({ missionId, orthomosaics }: Props) {
     )
   }
 
-  const resume = useResumeYield(missionId)
   if (!yieldStats || yieldStats.status === 'skipped') {
     return (
       <div>

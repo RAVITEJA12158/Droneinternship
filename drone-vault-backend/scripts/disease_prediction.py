@@ -22,6 +22,7 @@ BATCH_SIZE = 8
 IGNORE_LABEL = 255
 SEED = 42
 NODATA_VALUE = 255
+MODEL_NAME = "maxvit_tiny_tf_224"  # Only supported architecture
 
 CLASS_INFO: Dict[int, Tuple[str, Tuple[float, float, float], str]] = {
     0: ("Background/Water", (0.05, 0.12, 0.34), "#0f3b82"),
@@ -88,26 +89,64 @@ def pad_image(image: np.ndarray, min_height: int, min_width: int) -> np.ndarray:
         return image
     return np.pad(image, ((0, 0), (0, pad_height), (0, pad_width)), mode="constant", constant_values=0)
 
+import torch.nn as nn
+
+
+class MaxVitClassifier(nn.Module):
+    """
+    Matches the architecture the checkpoint was saved from:
+        self.backbone = maxvit_tiny_tf_224  (num_classes=0 → feature extractor)
+        self.seg_head = nn.Linear(feature_dim, num_classes)
+    The checkpoint keys are prefixed with 'backbone.' and 'seg_head.'.
+    """
+    def __init__(self, in_chans: int, num_classes: int) -> None:
+        super().__init__()
+        self.backbone = create_model(
+            MODEL_NAME,
+            pretrained=False,
+            in_chans=in_chans,
+            num_classes=0,  # remove built-in head → outputs feature vector
+        )
+        self.seg_head = nn.Linear(self.backbone.num_features, num_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.seg_head(self.backbone(x))
+
+
 def load_checkpoint(path: str, device):
-    ckpt = torch.load(path, map_location=device)
+    ckpt = torch.load(path, map_location=device, weights_only=False)
 
-    if "model_state_dict" in ckpt:
-        return ckpt
+    # Raw state dict (no wrapper dict) — already has backbone./seg_head. keys
+    if not isinstance(ckpt, dict) or "model_state_dict" not in ckpt:
+        raw_sd = ckpt if isinstance(ckpt, dict) else {}
+        # Detect in_chans from the stem conv weight shape  (out, in, kH, kW)
+        stem_key = "backbone.stem.conv1.weight"
+        in_chans = int(raw_sd[stem_key].shape[1]) if stem_key in raw_sd else 7
+        # Detect num_classes from seg_head weight shape  (num_classes, features)
+        head_key = "seg_head.weight"
+        num_classes = int(raw_sd[head_key].shape[0]) if head_key in raw_sd else 5
+        return {
+            "model_name": MODEL_NAME,
+            "model_state_dict": raw_sd,
+            "num_classes": num_classes,
+            "label_map": {i: i for i in range(num_classes)},
+            "in_chans": in_chans,
+            "patch_size": 224,
+        }
 
-    return {
-        "model_name": "maxvit_tiny_tf_224",
-        "model_state_dict": ckpt,
-        "num_classes": 5,
-        "label_map": {
-            0: 0,
-            1: 1,
-            2: 2,
-            3: 3,
-            4: 4,
-        },
-        "in_chans": 7,
-        "patch_size": 224,
-    }
+    # Wrapped dict — enforce MaxViT and auto-detect shape metadata
+    sd = ckpt["model_state_dict"]
+    stem_key = "backbone.stem.conv1.weight"
+    head_key = "seg_head.weight"
+    in_chans = int(sd[stem_key].shape[1]) if stem_key in sd else int(ckpt.get("in_chans", 7))
+    num_classes = int(sd[head_key].shape[0]) if head_key in sd else int(ckpt.get("num_classes", 5))
+
+    ckpt["model_name"] = MODEL_NAME
+    ckpt["in_chans"] = in_chans
+    ckpt["num_classes"] = num_classes
+    if "label_map" not in ckpt:
+        ckpt["label_map"] = {i: i for i in range(num_classes)}
+    return ckpt
 
 
 def build_geotiff_profile(profile: dict, array: np.ndarray, dtype: str, nodata: int) -> dict:
@@ -236,15 +275,8 @@ def process(args: argparse.Namespace) -> None:
     if in_chans != image.shape[0]:
         raise ValueError(f"Checkpoint expects {in_chans} input channels, but prepared image has {image.shape[0]}")
 
-    # Instantiate model from checkpoint metadata and then load weights
-    model_name = checkpoint.get("model_name", "maxvit_tiny_tf_224")
-    model = create_model(
-        model_name,
-        pretrained=False,
-        in_chans=in_chans,
-        num_classes=num_classes,
-    )
-
+    # Build the wrapper that matches the checkpoint (backbone + seg_head)
+    model = MaxVitClassifier(in_chans=in_chans, num_classes=num_classes).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
@@ -338,7 +370,7 @@ def process(args: argparse.Namespace) -> None:
         "enabled": True,
         "status": "completed",
         "source": "updatedallinone.ipynb",
-        "model_name": checkpoint["model_name"],
+        "model_name": MODEL_NAME,
         "checkpoint_name": os.path.basename(args.checkpoint),
         "device": str(device),
         "patch_size": patch_size,
