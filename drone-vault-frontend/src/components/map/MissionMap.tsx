@@ -158,7 +158,8 @@ export function MissionMap({ captureSets, missionPlans = [] }: Props) {
     async function loadMissionPlan(file: DroneFile) {
       setIsLoadingPlan(true)
       try {
-        const response = await fetch(filesApi.getDownloadUrl(file.id), { credentials: 'include' })
+        const downloadUrl = (file as any).downloadUrl ?? filesApi.getDownloadUrl(file.id)
+        const response = await fetch(downloadUrl, { credentials: 'include' })
         if (!response.ok) throw new Error('Plan download failed')
         const text = await response.text()
         if (!cancelled) setParsedPlan(parseMissionPlan(file.originalName, text))

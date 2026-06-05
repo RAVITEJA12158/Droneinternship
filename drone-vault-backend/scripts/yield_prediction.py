@@ -114,32 +114,77 @@ def save_heatmap(heatmap: np.ndarray, output_path: str, title: str) -> None:
     plt.close()
 
 
-def save_results_report(output_path: str, metrics: Dict[str, float], field_results: List[Dict[str, float | str | None]]) -> None:
-    lines = [
+def save_results_report(output_path: str, metrics: Dict[str, float], field_results: List[Dict[str, float | str | None]]) -> str:
+    """Write a human-readable results report and return the absolute path written.
+
+    This function ensures the target directory exists, writes the file
+    safely (flush+fsync), and logs the absolute path so callers can expose
+    it to a frontend or other consumer.
+    """
+    lines: List[str] = [
         "==============================",
         "      MODEL RESULTS",
         "==============================",
         "",
         "Accuracy Metrics:",
-        f"MAE  : {metrics.get('mae', 0.0):.4f}" if "mae" in metrics else "MAE  : N/A",
-        f"RMSE : {metrics.get('rmse', 0.0):.4f}" if "rmse" in metrics else "RMSE : N/A",
-        f"R2   : {metrics.get('r2', 0.0):.4f}" if "r2" in metrics else "R2   : N/A",
-        "",
-        "Field-wise Results:",
-        "",
     ]
 
+    # Append metrics with safe formatting
+    for key, label in (("mae", "MAE  "), ("rmse", "RMSE "), ("r2", "R2   ")):
+        value = metrics.get(key)
+        if isinstance(value, numbers.Real):
+            lines.append(f"{label}: {float(value):.4f}")
+        else:
+            lines.append(f"{label}: N/A")
+
+    lines.extend(["", "Field-wise Results:", ""])
+
     for result in field_results:
+        name = result.get("field_name") or "Unnamed field"
+        predicted = result.get("predicted_yield_tonnes")
         ground_truth = result.get("ground_truth_yield_tonnes")
+
+        try:
+            predicted_str = f"{float(predicted):.2f} tonnes"
+        except Exception:
+            predicted_str = "N/A"
+
+        try:
+            ground_truth_str = f"{float(ground_truth):.2f} tonnes"
+        except Exception:
+            ground_truth_str = "N/A"
+
         lines.extend([
-            str(result["field_name"]),
-            f"Predicted Yield : {float(result['predicted_yield_tonnes']):.2f} tonnes",
-            f"Ground Truth    : {float(ground_truth):.2f} tonnes" if isinstance(ground_truth, numbers.Real) else "Ground Truth    : N/A",
+            str(name),
+            f"Predicted Yield : {predicted_str}",
+            f"Ground Truth    : {ground_truth_str}",
             "----------------------------------------",
         ])
 
-    with open(output_path, "w", encoding="utf-8") as handle:
-        handle.write("\n".join(lines) + "\n")
+    abs_path = os.path.abspath(output_path)
+    dirpath = os.path.dirname(abs_path) or os.getcwd()
+
+    try:
+        os.makedirs(dirpath, exist_ok=True)
+    except Exception as exc:
+        log_step("save_results_report", f"Could not create directory {dirpath}: {exc}")
+        raise
+
+    try:
+        with open(abs_path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except Exception:
+                # fsync may not be available on some environments; ignore
+                pass
+    except Exception as exc:
+        log_step("save_results_report", f"Failed to write report to {abs_path}: {exc}")
+        raise
+
+    log_step("save_results_report", f"Saved results report to {abs_path}")
+    return abs_path
 
 
 def main() -> None:
@@ -210,7 +255,7 @@ def main() -> None:
 
     log_step("5/5", "Saving yield prediction outputs")
     save_heatmap(heatmap, heatmap_path, f"Predicted yield: {prediction:.2f} tonnes")
-    save_results_report(report_path, metrics, field_results)
+    report_abs_path = save_results_report(report_path, metrics, field_results)
 
     stats = {
         "enabled": True,
@@ -233,6 +278,7 @@ def main() -> None:
         "metrics": metrics,
         "field_results": field_results,
         "results_report": os.path.basename(report_path),
+        "results_report_path": report_abs_path,
     }
 
     with open(stats_path, "w", encoding="utf-8") as f:

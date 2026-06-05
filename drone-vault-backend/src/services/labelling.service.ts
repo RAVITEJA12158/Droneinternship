@@ -371,14 +371,18 @@ async function runLabellingJob(
         if (stoppedLabellingJobs.has(jobId)) return;
         const progress = progressFromMessage(message);
         if (progress == null && !/Starting multispectral/i.test(message)) return;
-        prisma.labellingJob.findUnique({ where: { id: jobId }, select: { stats: true } })
-          .then(current => prisma.labellingJob.update({
-            where: { id: jobId },
-            data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue }
-          }))
-          .catch(err => logLabellingJobError(jobId, "Could not save labelling progress to the database.", err));
+        prisma.labellingJob
+          .findUnique({ where: { id: jobId }, select: { stats: true } })
+          .then((current) =>
+            prisma.labellingJob.update({
+              where: { id: jobId },
+              data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue },
+            })
+          )
+          .catch((err) => logLabellingJobError(jobId, "Could not save labelling progress to the database.", err));
       }
     );
+
     logLabellingJob(jobId, "Labelling analysis finished. Preparing output files.");
 
     let diseasePrediction: Record<string, unknown> | null = null;
@@ -404,6 +408,7 @@ async function runLabellingJob(
         } else {
           try {
             logLabellingJob(jobId, `Starting disease prediction with checkpoint ${checkpointPath}.`);
+            // Write disease outputs directly into the mission disease directory
             await executeDiseasePredictionScript(
               jobId,
               toAbsolutePath(inputRelativePath),
@@ -411,21 +416,24 @@ async function runLabellingJob(
               path.join(tempDir, OUTPUT_FILES.ndreTif),
               path.join(tempDir, OUTPUT_FILES.labelsTif),
               checkpointPath,
-              tempDir,
+              diseaseDir,
               (message) => {
                 if (stoppedLabellingJobs.has(jobId)) return;
                 const progress = progressFromMessage(message);
                 if (progress == null && !/disease prediction/i.test(message)) return;
-                prisma.labellingJob.findUnique({ where: { id: jobId }, select: { stats: true } })
-                  .then(current => prisma.labellingJob.update({
-                    where: { id: jobId },
-                    data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue }
-                  }))
-                  .catch(err => logLabellingJobError(jobId, "Could not save disease prediction progress to the database.", err));
+                prisma.labellingJob
+                  .findUnique({ where: { id: jobId }, select: { stats: true } })
+                  .then((current) =>
+                    prisma.labellingJob.update({
+                      where: { id: jobId },
+                      data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue },
+                    })
+                  )
+                  .catch((err) => logLabellingJobError(jobId, "Could not save disease prediction progress to the database.", err));
               }
             );
 
-            const diseaseStatsPath = path.join(tempDir, DISEASE_OUTPUT_FILES.diseasePredictionStats);
+            const diseaseStatsPath = path.join(diseaseDir, DISEASE_OUTPUT_FILES.diseasePredictionStats);
             diseasePrediction = await fileExists(diseaseStatsPath)
               ? JSON.parse(await fs.promises.readFile(diseaseStatsPath, "utf8"))
               : {
@@ -467,25 +475,29 @@ async function runLabellingJob(
         } else {
           try {
             logLabellingJob(jobId, `Starting yield prediction with checkpoint ${yieldCheckpointPath}.`);
+            // Write yield outputs directly into the mission yield directory
             await executeYieldPredictionScript(
               jobId,
               toAbsolutePath(inputRelativePath),
               yieldCheckpointPath,
-              tempDir,
+              yieldDir,
               (message) => {
                 if (stoppedLabellingJobs.has(jobId)) return;
                 const progress = progressFromMessage(message);
                 if (progress == null && !/yield prediction/i.test(message)) return;
-                prisma.labellingJob.findUnique({ where: { id: jobId }, select: { stats: true } })
-                  .then(current => prisma.labellingJob.update({
-                    where: { id: jobId },
-                    data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue }
-                  }))
-                  .catch(err => logLabellingJobError(jobId, "Could not save yield prediction progress to the database.", err));
+                prisma.labellingJob
+                  .findUnique({ where: { id: jobId }, select: { stats: true } })
+                  .then((current) =>
+                    prisma.labellingJob.update({
+                      where: { id: jobId },
+                      data: { stats: mergeProgressStats(current?.stats, message, progress) as Prisma.InputJsonValue },
+                    })
+                  )
+                  .catch((err) => logLabellingJobError(jobId, "Could not save yield prediction progress to the database.", err));
               }
             );
 
-            const yieldStatsPath = path.join(tempDir, YIELD_OUTPUT_FILES.yieldPredictionStats);
+            const yieldStatsPath = path.join(yieldDir, YIELD_OUTPUT_FILES.yieldPredictionStats);
             yieldPrediction = await fileExists(yieldStatsPath)
               ? JSON.parse(await fs.promises.readFile(yieldStatsPath, "utf8"))
               : {
@@ -533,17 +545,9 @@ async function runLabellingJob(
     );
 
     const copiedDiseaseOutputs = new Set<string>();
-    await Promise.all(
-      Object.entries(DISEASE_OUTPUT_FILES).map(async ([key, filename]) => {
-        const sourcePath = path.join(tempDir, filename);
-        if (!(await fileExists(sourcePath))) return;
-        await fs.promises.copyFile(
-          sourcePath,
-          toAbsolutePath(diseaseOutputRelative[key as keyof typeof DISEASE_OUTPUT_FILES])
-        );
-        copiedDiseaseOutputs.add(key);
-      })
-    );
+    for (const [key, filename] of Object.entries(DISEASE_OUTPUT_FILES)) {
+      if (await fileExists(path.join(diseaseDir, filename))) copiedDiseaseOutputs.add(key);
+    }
 
     const yieldOutputRelative = Object.fromEntries(
       Object.entries(YIELD_OUTPUT_FILES).map(([key, filename]) => [
@@ -553,17 +557,9 @@ async function runLabellingJob(
     ) as Record<keyof typeof YIELD_OUTPUT_FILES, string>;
 
     const copiedYieldOutputs = new Set<string>();
-    await Promise.all(
-      Object.entries(YIELD_OUTPUT_FILES).map(async ([key, filename]) => {
-        const sourcePath = path.join(tempDir, filename);
-        if (!(await fileExists(sourcePath))) return;
-        await fs.promises.copyFile(
-          sourcePath,
-          toAbsolutePath(yieldOutputRelative[key as keyof typeof YIELD_OUTPUT_FILES])
-        );
-        copiedYieldOutputs.add(key);
-      })
-    );
+    for (const [key, filename] of Object.entries(YIELD_OUTPUT_FILES)) {
+      if (await fileExists(path.join(yieldDir, filename))) copiedYieldOutputs.add(key);
+    }
 
     const statsRaw = await fs.promises.readFile(path.join(tempDir, OUTPUT_FILES.stats), "utf8");
     const stats = withoutLabellingModelFallback({
@@ -592,7 +588,7 @@ async function runLabellingJob(
         ...(copiedDiseaseOutputs.has("diseasePredictionGroundTruthMap")
           ? { diseasePredictionGroundTruthMapUrl: diseaseOutputRelative.diseasePredictionGroundTruthMap }
           : {}),
-        ...(copiedYieldOutputs?.has("yieldPredictionHeatmap")
+        ...(copiedYieldOutputs.has("yieldPredictionHeatmap")
           ? { yieldPredictionHeatmapUrl: yieldOutputRelative.yieldPredictionHeatmap }
           : {}),
       },
@@ -609,7 +605,7 @@ async function runLabellingJob(
         ...(copiedDiseaseOutputs.has("diseasePredictionStats")
           ? { diseasePredictionStatsJsonUrl: diseaseOutputRelative.diseasePredictionStats }
           : {}),
-        ...(copiedYieldOutputs?.has("yieldPredictionStats")
+        ...(copiedYieldOutputs.has("yieldPredictionStats")
           ? { yieldPredictionStatsJsonUrl: yieldOutputRelative.yieldPredictionStats }
           : {}),
       },

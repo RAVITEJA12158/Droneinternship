@@ -4,6 +4,7 @@ import * as fileCtrl from "../controllers/file.controller";
 import * as csCtrl from "../controllers/captureSet.controller";
 import * as orthoCtrl from "../controllers/orthomosaic.controller";
 import * as exportCtrl from "../controllers/export.controller";
+import * as outputsCtrl from "../controllers/outputs.controller";
 import * as uploadCtrl from "../controllers/upload.controller";
 import * as labellingCtrl from "../controllers/labelling.controller";
 import { authMiddleware } from "../middleware/auth.middleware";
@@ -36,6 +37,9 @@ router.post("/missions/:id/upload/orthomosaic", orthomosaicUpload.fields([
 
 // Files
 router.get("/missions/:id/files", fileCtrl.list);
+// Outputs on-disk (unregistered files inside mission storage)
+router.get("/missions/:id/outputs", outputsCtrl.listOutputs);
+router.get("/missions/:id/outputs/download", outputsCtrl.downloadOutput);
 
 // Capture sets
 router.get("/missions/:id/capture-sets", csCtrl.list);

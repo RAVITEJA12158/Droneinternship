@@ -7,7 +7,11 @@ import { formatBytes } from '@/lib/utils/formatBytes'
 
 interface Props { file: DroneFile; onClose: () => void; onPrev?: () => void; onNext?: () => void }
 export function LightboxViewer({ file, onClose, onPrev, onNext }: Props) {
-  const imgUrl = `${filesApi.getDownloadUrl(file.id)}?inline=true`
+  const imgUrl = (() => {
+    const dl = (file as any).downloadUrl as string | undefined
+    if (dl) return dl.includes('?') ? `${dl}&inline=true` : `${dl}?inline=true`
+    return `${filesApi.getDownloadUrl(file.id)}?inline=true`
+  })()
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
