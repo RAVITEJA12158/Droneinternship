@@ -111,6 +111,7 @@ export interface LabellingArtifacts {
   diseasePredictionTifUrl?: string | null
   diseasePredictionStatsJsonUrl?: string | null
   yieldPredictionStatsJsonUrl?: string | null
+  yieldPredictionReportUrl?: string | null
   statisticsJsonUrl?: string | null
   datasetSummaryCsvUrl?: string | null
 }

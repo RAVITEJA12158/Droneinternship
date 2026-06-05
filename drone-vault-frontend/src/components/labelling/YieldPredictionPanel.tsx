@@ -9,6 +9,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Spinner } from '@/components/ui/Spinner'
 
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
+
 interface Props {
   missionId: string
   orthomosaics: Orthomosaic[]
@@ -36,9 +38,19 @@ function StatTile({ label, value }: { label: string; value: string | number }) {
 }
 
 function ArtifactLink({ label, href }: { label: string; href?: string | null }) {
+  const resolvedHref = href
+    ? /^https?:\/\//.test(href)
+      ? href
+      : href.startsWith('/')
+      ? `${apiBaseUrl}${href}`
+      : href
+    : undefined
+
   return (
     <a
-      href={href || undefined}
+      href={resolvedHref}
+      target="_blank"
+      rel="noopener noreferrer"
       aria-disabled={!href}
       className={`inline-flex h-9 items-center justify-between gap-2 rounded-lg border px-3 text-sm font-medium transition-colors ${
         href
@@ -218,6 +230,7 @@ export function YieldPredictionPanel({ missionId, orthomosaics }: Props) {
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
             <ArtifactLink label="Yield Prediction JSON" href={job?.stats?.artifacts?.yieldPredictionStatsJsonUrl} />
+            <ArtifactLink label="Yield Prediction Report" href={job?.stats?.artifacts?.yieldPredictionReportUrl} />
           </div>
         </div>
 

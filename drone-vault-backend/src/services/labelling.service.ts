@@ -39,6 +39,7 @@ const DISEASE_OUTPUT_FILES = {
 const YIELD_OUTPUT_FILES = {
   yieldPredictionHeatmap: "yield_prediction_heatmap.png",
   yieldPredictionStats: "yield_prediction_statistics.json",
+  yieldPredictionReport: "yield_prediction_results.txt",
 };
 
 const runningLabellingProcesses = new Map<string, ChildProcessWithoutNullStreams>();
@@ -608,6 +609,9 @@ async function runLabellingJob(
         ...(copiedYieldOutputs.has("yieldPredictionStats")
           ? { yieldPredictionStatsJsonUrl: yieldOutputRelative.yieldPredictionStats }
           : {}),
+        ...(copiedYieldOutputs.has("yieldPredictionReport")
+          ? { yieldPredictionReportUrl: yieldOutputRelative.yieldPredictionReport }
+          : {}),
       },
     }) as Prisma.InputJsonValue;
 
@@ -909,6 +913,8 @@ async function runDiseasePredictionOnly(jobId: string, mission: { name: string; 
         ...(copiedDiseaseOutputs.has("diseasePredictionTif") ? { diseasePredictionTifUrl: diseaseOutputRelative.diseasePredictionTif } : {}),
         ...(copiedDiseaseOutputs.has("diseasePredictionStats") ? { diseasePredictionStatsJsonUrl: diseaseOutputRelative.diseasePredictionStats } : {}),
         ...(copiedYieldOutputs.has("yieldPredictionStats") ? { yieldPredictionStatsJsonUrl: yieldOutputRelative.yieldPredictionStats } : {}),
+        ...(copiedYieldOutputs.has("yieldPredictionReport") ? { yieldPredictionReportUrl: yieldOutputRelative.yieldPredictionReport } : {}),
+        ...(copiedYieldOutputs.has("yieldPredictionReport") ? { yieldPredictionReportUrl: yieldOutputRelative.yieldPredictionReport } : {}),
       },
     }) as Prisma.InputJsonValue;
 
